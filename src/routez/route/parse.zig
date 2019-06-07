@@ -6,22 +6,21 @@ const builtin = @import("builtin");
 const TypeInfo = builtin.TypeInfo;
 const TypeId = builtin.TypeId;
 const assert = std.debug.assert;
+use @import("../http.zig");
 
-pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []const u8, path: []const u8) (if (Errs != null) Errs.?!bool else bool) {
-    const handler_type = @typeOf(handler);
-    comptime assert(@typeInfo(handler_type) == TypeId.Fn);
-    comptime assert(@typeInfo(handler_type).Fn.args.len == 2);
-    comptime assert(@typeInfo(handler_type).Fn.args[1].arg_type != null);
-    const Args = @typeInfo(handler_type).Fn.args[1].arg_type.?;
-    comptime assert(@typeInfo(Args) == TypeId.Struct);
+pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []const u8, req: Request, res: Response) (if (Errs != null) Errs.?!void else void) {
+    const has_args = @typeInfo(@typeOf(handler)).Fn.args.len == 3;
+    const Args = if (has_args) @typeInfo(@typeInfo(@typeOf(handler)).Fn.args[2].arg_type.?).Pointer.child else void;
 
     var args: Args = undefined;
-    comptime var used: [@typeInfo(Args).Struct.fields.len]bool = undefined;
-    comptime {
-        for (used) |_, i| {
-            used[i] = false;
-        }
+
+    comptime var used: if (has_args) [@typeInfo(Args).Struct.fields.len]bool else void = undefined;
+
+    if (has_args) {
+        comptime mem.set(bool, &used, false);
     }
+
+    const path = req.path;
 
     const State = enum {
         Start,
@@ -58,12 +57,15 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
                     }
                 },
                 '{' => {
+                    if (!has_args) {
+                        @compileError("handler does not accept path arugments");
+                    }
                     state = .Format;
                     fmt_begin = i + 1;
                     const r = pathbuf[begin..index];
                     begin = index;
                     if (!mem.eql(u8, r, path[path_index .. path_index + r.len])) {
-                        return false;
+                        return;
                     }
                     path_index += r.len;
                 },
@@ -165,7 +167,7 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
                     }
                     // route is incorrect if the argument given is zero sized
                     if (len == 0) {
-                        return false;
+                        return;
                     }
                     path_index += len;
 
@@ -182,12 +184,19 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
     // if (!mem.eql(u8, pathbuf[begin..], path[path_index..])) {
     //     return false;
     // }
-    if (Errs != null) {
-        try handler(0, args);
+    if (has_args) {
+        if (Errs != null) {
+            try handler(req, res, &args);
+        } else {
+            handler(req, res, &args);
+        }
     } else {
-        handler(0, args);
+        if (Errs != null) {
+            try handler(req, res);
+        } else {
+            handler(req, res);
+        }
     }
-    return true;
 }
 
 fn canUse(comptime Args: type, field_name: []const u8, used: []bool) void {
@@ -252,35 +261,4 @@ fn getString(path: []const u8, delim: u8, len: *usize) []const u8 {
     }
     len.* = path.len;
     return path;
-}
-
-test "unicode" {
-    assert(match(unicodeHandler, null, "/test/ä", "/test/%C3%A42"));
-}
-
-fn unicodeHandler(req: u32, args: struct {}) void {}
-
-test "argument" {
-    assert(match(argumentHandler, null, "/{number;x}", "/2f5"));
-}
-
-fn argumentHandler(req: u32, args: struct {
-    number: u32,
-}) void {
-    assert(args.number == 0x2f5);
-}
-
-test "error return value" {
-    _ = match(errorHandler, ErrorHandlerErr, "/error/{error}", "/error/Example") catch |e| {
-        assert(e == ErrorHandlerErr.Example);
-        return;
-    };
-}
-
-const ErrorHandlerErr = error{Example};
-
-fn errorHandler(req: u32, args: struct {
-    @"error": []const u8,
-}) ErrorHandlerErr!void {
-    return ErrorHandlerErr.Example;
 }

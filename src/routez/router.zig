@@ -1,129 +1,176 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
-const ArrayList = std.ArrayList;
+const assert = std.debug.assert;
 const builtin = @import("builtin");
+const TypeInfo = builtin.TypeInfo;
+const TypeId = builtin.TypeId;
+use @import("route/parse.zig");
 
-const http = @import("http.zig");
+use @import("http.zig");
 
-pub const Router = struct {
-    routes: [100]Route,
-    count: u32,
-    error_handler: ?ErrorHandler,
-
-    const ErrorHandler = fn(anyerror, http.Request) http.Response;
-
-    fn defaultErrorHandler(err: anyerror, req: http.Request) http.Response {
-        return http.Response{
-            .code = 502,
-        };
-    }
-
-    const Route = struct {
-        path: []const u8,
-        method: Method,
-        handler: *const void,
-        handler_type: builtin.TypeInfo,
-    };
-
-    pub fn init() Router {
-        return Router {
-            .routes = undefined,
-            .count = 0,
-            .error_handler = defaultErrorHandler,
-        };
-    }
-
-    const Method = enum {
-        All,
-        Get,
-        Head,
-        Post,
-        Put,
-        Delete,
-        Connect,
-        Options,
-        Trace,
-        Patch,
-    };
-
-    pub fn all(comptime r: *Router, path: []const u8, handler: var) void {
-        r.addRoute(.All, path, handler);
-    }
-
-    pub fn get(comptime r: *Router, comptime path: []const u8, handler: var) void {
-        r.addRoute(.Get, path, handler);
-    }
-
-    pub fn head(comptime r: *Router, path: []const u8, handler: var) void {
-        r.addRoute(.Head, path, handler);
-    }
-
-    pub fn post(comptime r: *Router, path: []const u8, handler: var) void {
-        r.addRoute(.Post, path, handler);
-    }
-
-    pub fn put(comptime r: *Router, path: []const u8, handler: var) void {
-        r.addRoute(.Put, path, handler);
-    }
-
-    pub fn delete(comptime r: *Router, path: []const u8, handler: var) void {
-        r.addRoute(.Delete, path, handler);
-    }
-
-    pub fn connect(comptime r: *Router, path: []const u8, handler: var) void {
-        r.addRoute(.Connect, path, handler);
-    }
-
-    pub fn options(comptime r: *Router, path: []const u8, handler: var) void {
-        r.addRoute(.Options, path, handler);
-    }
-
-    pub fn trace(comptime r: *Router, path: []const u8, handler: var) void {
-        r.addRoute(.Trace, path, handler);
-    }
-
-    pub fn patch(comptime r: *Router, path: []const u8, handler: var) void {
-        r.addRoute(.Patch, path, handler);
-    }
-
-    /// add route with given method
-    fn addRoute(comptime r: *Router, comptime method: Method, comptime path: []const u8, handler: var) void {
-        if (r.count >= 100) {
-            @compileError("too many routes, TODO better comptime");
-        }
-        comptime {
-            const t = @typeInfo(@typeOf(handler));
-            if (t != builtin.TypeId.Fn) {
-                @compileError("handler must be a function");
-            }
-            const f = t.Fn;
-
-            if (f.return_type) |ret| {
-                if (ret != http.Response and (@typeInfo(ret) != builtin.TypeId.ErrorUnion or @typeInfo(ret).ErrorUnion.payload != http.Response)) {
-                    @compileError("handler must return a http response");
-                }
-            } else {
-                @compileError("handler must return a value");
-            }
-            r.routes[r.count] = Route {
-                .path = path,
-                .method = method,
-                .handler = @ptrCast(*const void, handler),
-                .handler_type = t,
-            };
-            r.count += 1;
-        }
-    }
-
+pub const Settings = struct {
+    port: u16,
 };
 
-fn index(req: http.Request) http.Response {
-    return http.Response {
-        .code = 200,
+pub const ErrorHandler = fn (anyerror, Request, Response) bool;
+
+fn defaultErrorHandler(err: anyerror, req: Request, res: Response) bool {
+    res.status_code = 500;
+    return false;
+}
+
+// todo include error handlers and other mixins in routes
+pub fn build(comptime routes: []Route, comptime error_handler: ErrorHandler) type {
+    return struct {
+        fn handle(req: Request, res: Response) void {
+            inline for (routes) |route| {
+                comptime var type_info = @typeInfo(route.handler_type).Fn;
+                comptime var err = switch (@typeId(type_info.return_type.?)) {
+                    TypeId.ErrorUnion => type_info.return_type.?.ErrorUnion.error_set,
+                    else => null,
+                };
+                var method = route.method;
+
+                // try matching if method is correct or handler accepts all
+                if (method == .All or req.method == method) {
+                    if (err == null) {
+                        match(@ptrCast(route.handler_type, route.handler), err, route.path, req, res);
+                    } else {
+                        match(@ptrCast(route.handler_type, route.handler), err, route.path, req, res) catch |e| error_handler(req, res);
+                    }
+                }
+            }
+        }
+
+        pub fn start(settings: Settings, req: Request, res: Response) void {
+            handle(req, res);
+        }
     };
 }
 
-test "wut" {
-    comptime  var r = Router.init();
-    r.get("/", index);
+const Route = struct {
+    path: []const u8,
+    method: Method,
+    handler: fn () void,
+    handler_type: type,
+
+    pub fn all(path: []const u8, handler: var) Route {
+        return addRoute(.All, path, handler);
+    }
+
+    pub fn get(path: []const u8, handler: var) Route {
+        return addRoute(.Get, path, handler);
+    }
+
+    pub fn head(path: []const u8, handler: var) Route {
+        return addRoute(.Head, path, handler);
+    }
+
+    pub fn post(path: []const u8, handler: var) Route {
+        return addRoute(.Post, path, handler);
+    }
+
+    pub fn put(path: []const u8, handler: var) Route {
+        return addRoute(.Put, path, handler);
+    }
+
+    pub fn delete(path: []const u8, handler: var) Route {
+        return addRoute(.Delete, path, handler);
+    }
+
+    pub fn connect(path: []const u8, handler: var) Route {
+        return addRoute(.Connect, path, handler);
+    }
+
+    pub fn options(path: []const u8, handler: var) Route {
+        return addRoute(.Options, path, handler);
+    }
+
+    pub fn trace(path: []const u8, handler: var) Route {
+        return addRoute(.Trace, path, handler);
+    }
+
+    pub fn patch(path: []const u8, handler: var) Route {
+        return addRoute(.Patch, path, handler);
+    }
+
+    /// add route with given method
+    fn addRoute(method: Method, path: []const u8, handler: var) Route {
+        const t = @typeInfo(@typeOf(handler));
+        if (t != builtin.TypeId.Fn) {
+            @compileError("handler must be a function");
+        }
+        const f = t.Fn;
+        if (f.args.len != 2 and f.args.len != 3) {
+            @compileError("handler must take 2 or 3 arguments");
+        }
+
+        if (f.args[0].arg_type orelse void != Request) {
+            @compileError("first argument of a handler must be a HTTP Request");
+        }
+
+        if (f.args[1].arg_type orelse void != Response) {
+            @compileError("second argument of a handler must be a HTTP Response");
+        }
+
+        if (f.args.len == 3) {
+            const arg_type = f.args[2].arg_type orelse void;
+            if (@typeId(arg_type) != TypeId.Pointer or blk: {
+                const ptr = @typeInfo(arg_type).Pointer;
+                break :blk !ptr.is_const or ptr.size != .One or @typeId(ptr.child) != TypeId.Struct;
+            }) {
+                @compileError("third argument of a handler must be a const pointer to a struct containing all path arguments it takes");
+            }
+        }
+
+        const ret = f.return_type orelse undefined;
+        if (ret != void and (@typeInfo(ret) != builtin.TypeId.ErrorUnion or @typeInfo(ret).ErrorUnion.payload != void)) {
+            @compileError("handler must return void which may be in an error union");
+        }
+
+        return Route{
+            .path = path,
+            .method = method,
+            .handler = @ptrCast(fn () void, handler),
+            .handler_type = @typeOf(handler),
+        };
+    }
+};
+
+test "index" {
+    const router = comptime build(&[]Route{Route.get("/", index)}, defaultErrorHandler);
+
+    var req = request{ .code = 2, .method = .Get, .path = "/" };
+    var res = try std.debug.global_allocator.create(response);
+    res.* = response{ .status_code = 500 };
+
+    router.start(Settings{
+        .port = 8080,
+    }, &req, res);
+    assert(res.status_code == 200);
+}
+
+fn index(req: Request, res: Response) void {
+    res.status_code = 200;
+    return;
+}
+
+test "args" {
+    const router = comptime build(&[]Route{Route.get("/a/{num}", a)}, defaultErrorHandler);
+
+    var req = request{ .code = 2, .method = .Get, .path = "/a/14" };
+    var res = try std.debug.global_allocator.create(response);
+    res.* = response{ .status_code = 500 };
+
+    router.start(Settings{
+        .port = 8080,
+    }, &req, res);
+    assert(res.status_code == 200);
+}
+
+fn a(req: Request, res: Response, args: *const struct {
+    num: u32,
+}) void {
+    res.status_code = 200;
+    assert(args.num == 14);
+    return;
 }
