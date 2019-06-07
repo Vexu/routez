@@ -7,7 +7,7 @@ const TypeInfo = builtin.TypeInfo;
 const TypeId = builtin.TypeId;
 const assert = std.debug.assert;
 
-pub fn match(comptime handler: var, comptime Errs: ?type, path: []const u8, comptime route: []const u8) if (Errs != null) Errs.?!bool else bool {
+pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []const u8, path: []const u8) (if (Errs != null) Errs.?!bool else bool) {
     const handler_type = @typeOf(handler);
     comptime assert(@typeInfo(handler_type) == TypeId.Fn);
     comptime assert(@typeInfo(handler_type).Fn.args.len == 2);
@@ -16,7 +16,7 @@ pub fn match(comptime handler: var, comptime Errs: ?type, path: []const u8, comp
     comptime assert(@typeInfo(Args) == TypeId.Struct);
 
     var args: Args = undefined;
-    comptime var used: [@typeInfo(Args).Struct.fields.len] bool = undefined;
+    comptime var used: [@typeInfo(Args).Struct.fields.len]bool = undefined;
     comptime {
         for (used) |_, i| {
             used[i] = false;
@@ -58,13 +58,11 @@ pub fn match(comptime handler: var, comptime Errs: ?type, path: []const u8, comp
                     }
                 },
                 '{' => {
-                    comptime {
-                        state = .Format;
-                        fmt_begin = i + 1;
-                    }
+                    state = .Format;
+                    fmt_begin = i + 1;
                     const r = pathbuf[begin..index];
-                    comptime begin = index;
-                    if (!mem.eql(u8, r, path[path_index..path_index+r.len])) {
+                    begin = index;
+                    if (!mem.eql(u8, r, path[path_index .. path_index + r.len])) {
                         return false;
                     }
                     path_index += r.len;
@@ -139,11 +137,11 @@ pub fn match(comptime handler: var, comptime Errs: ?type, path: []const u8, comp
                                     },
                                     else => @compileError("invalid format character"),
                                 },
-                                .Delim => {//todo unicode?
+                                .Delim => { //todo unicode?
                                     delim = fc;
                                     fstate = .Done;
                                 },
-                                .Done => @compileError("unexpected character " ++ (if (number)  "after format" else "after delimiter") ++ " '" ++ fmt[fi..fi+1] ++ "'"),
+                                .Done => @compileError("unexpected character " ++ (if (number) "after format" else "after delimiter") ++ " '" ++ fmt[fi .. fi + 1] ++ "'"),
                                 else => unreachable,
                             }
                         }
@@ -159,7 +157,7 @@ pub fn match(comptime handler: var, comptime Errs: ?type, path: []const u8, comp
                         }
                     }
                     len = 0;
-                    // fixme these are never actually called
+
                     if (number) {
                         @field(args, field_name) = getNum(field_type, path[path_index..], radix, &len);
                     } else {
@@ -173,7 +171,7 @@ pub fn match(comptime handler: var, comptime Errs: ?type, path: []const u8, comp
 
                     state = .Path;
                 },
-                else => {}
+                else => {},
             },
         }
     }
@@ -219,11 +217,10 @@ fn verifyField(comptime field: type, number: *bool) void {
 }
 
 fn getNum(comptime T: type, path: []const u8, radix: u8, len: *usize) T {
-    std.debug.warn("\n {} {} {}\n", path, radix, index);
     const signed = @typeInfo(T).Int.is_signed;
     var sign = if (signed) false;
     var res: T = 0;
-    for (path) |c, i|{
+    for (path) |c, i| {
         if (signed and c == '-') {
             sign = true;
         }
@@ -258,29 +255,32 @@ fn getString(path: []const u8, delim: u8, len: *usize) []const u8 {
 }
 
 test "unicode" {
-    assert(match(unicodeHandler, null, "/test/%C3%A42", "/test/ä"));
+    assert(match(unicodeHandler, null, "/test/ä", "/test/%C3%A42"));
 }
 
-fn unicodeHandler(req: u32, args: struct{}) void {}
+fn unicodeHandler(req: u32, args: struct {}) void {}
 
 test "argument" {
-    assert(match(argumentHandler, null, "/{number}", "/2f5"));
+    assert(match(argumentHandler, null, "/{number;x}", "/2f5"));
 }
 
-fn argumentHandler(req: u32, args: struct{number: u32}) void {
-    std.debug.warn("\n{}\n", args.number);
+fn argumentHandler(req: u32, args: struct {
+    number: u32,
+}) void {
     assert(args.number == 0x2f5);
 }
 
 test "error return value" {
-    _ = match(errorHandler, ErrorHandlerErr, "/error/{error}", "/error/Example") catch |e| {assert(e == ErrorHandlerErr.Example); return;};
+    _ = match(errorHandler, ErrorHandlerErr, "/error/{error}", "/error/Example") catch |e| {
+        assert(e == ErrorHandlerErr.Example);
+        return;
+    };
 }
 
-const ErrorHandlerErr = error {
-    Example,
-};
+const ErrorHandlerErr = error{Example};
 
-fn errorHandler(req: u32, args: struct{@"error": []const u8}) ErrorHandlerErr!void {
-    std.debug.warn("\n{}\n", args.@"error");
+fn errorHandler(req: u32, args: struct {
+    @"error": []const u8,
+}) ErrorHandlerErr!void {
     return ErrorHandlerErr.Example;
 }
