@@ -8,6 +8,15 @@ const http = @import("http.zig");
 pub const Router = struct {
     routes: [100]Route,
     count: u32,
+    error_handler: ?ErrorHandler,
+
+    const ErrorHandler = fn(anyerror, http.Request) http.Response;
+
+    fn defaultErrorHandler(err: anyerror, req: http.Request) http.Response {
+        return http.Response{
+            .code = 502,
+        };
+    }
 
     const Route = struct {
         path: []const u8,
@@ -20,6 +29,7 @@ pub const Router = struct {
         return Router {
             .routes = undefined,
             .count = 0,
+            .error_handler = defaultErrorHandler,
         };
     }
 
@@ -114,8 +124,6 @@ fn index(req: http.Request) http.Response {
 }
 
 test "wut" {
-    comptime {
-        var r = Router.init();
-        r.get("/", index);
-    }
+    comptime  var r = Router.init();
+    r.get("/", index);
 }
