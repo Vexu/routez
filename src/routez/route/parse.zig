@@ -8,7 +8,8 @@ const TypeId = builtin.TypeId;
 const assert = std.debug.assert;
 use @import("../http.zig");
 
-pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []const u8, req: Request, res: Response) (if (Errs != null) Errs.?!void else void) {
+/// returns 1 if request matched route
+pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []const u8, req: Request, res: Response) (if (Errs != null) Errs.?!u32 else u32) {
     const has_args = @typeInfo(@typeOf(handler)).Fn.args.len == 3;
     const Args = if (has_args) @typeInfo(@typeInfo(@typeOf(handler)).Fn.args[2].arg_type.?).Pointer.child else void;
 
@@ -66,7 +67,7 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
                     const r = pathbuf[begin..index];
                     begin = index;
                     if (!mem.eql(u8, r, path[path_index .. path_index + r.len])) {
-                        return;
+                        return 0;
                     }
                     path_index += r.len;
                 },
@@ -168,7 +169,7 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
                     }
                     // route is incorrect if the argument given is zero sized
                     if (len == 0) {
-                        return;
+                        return 0;
                     }
                     path_index += len;
 
@@ -190,7 +191,7 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
     };
     comptime const r = pathbuf[begin..index];
     if (!mem.eql(u8, r, path[path_index..])) {
-        return;
+        return 0;
     }
 
     if (has_args) {
@@ -206,6 +207,7 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
             handler(req, res);
         }
     }
+    return 1;
 }
 
 fn canUse(comptime Args: type, field_name: []const u8, used: []bool) void {
@@ -239,7 +241,7 @@ fn getNum(comptime T: type, path: []const u8, radix: u8, len: *usize) T {
     var sign = if (signed) false;
     var res: T = 0;
     for (path) |c, i| {
-        if (signed and c == '-') {
+        if (signed and c == '-' and i == 1) {
             sign = true;
         }
         const value = switch (c) {
@@ -263,7 +265,7 @@ fn getNum(comptime T: type, path: []const u8, radix: u8, len: *usize) T {
 
 fn getString(path: []const u8, delim: u8, len: *usize) []const u8 {
     for (path) |c, i| {
-        if (c == delim) {
+        if (c == delim or c == '/') {
             len.* = i;
             return path[0..i];
         }

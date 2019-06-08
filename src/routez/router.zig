@@ -11,17 +11,18 @@ pub const Settings = struct {
     port: u16,
 };
 
-pub const ErrorHandler = fn (anyerror, Request, Response) bool;
+pub const ErrorHandler = fn (anyerror, Request, Response) u32;
 
-pub fn defaultErrorHandler(err: anyerror, req: Request, res: Response) bool {
-    res.status_code = 500;
-    return false;
+pub fn defaultErrorHandler(err: anyerror, req: Request, res: Response) u32 {
+    res.status_code = .InternalServerError;
+    return 1;
 }
 
 // todo include error handlers and other mixins in routes
 pub fn Router(comptime routes: []Route, comptime error_handler: ErrorHandler) type {
     return struct {
         fn handle(req: Request, res: Response) void {
+            var matched: u32 = 0;
             inline for (routes) |route| {
                 comptime var type_info = @typeInfo(route.handler_type).Fn;
                 comptime var err = switch (@typeId(type_info.return_type.?)) {
@@ -33,11 +34,15 @@ pub fn Router(comptime routes: []Route, comptime error_handler: ErrorHandler) ty
                 // try matching if method is correct or handler accepts all
                 if (method == .All or req.method == method) {
                     if (err == null) {
-                        match(@ptrCast(route.handler_type, route.handler), err, route.path, req, res);
+                        matched += match(@ptrCast(route.handler_type, route.handler), err, route.path, req, res);
                     } else {
-                        match(@ptrCast(route.handler_type, route.handler), err, route.path, req, res) catch |e| error_handler(req, res);
+                        matched += match(@ptrCast(route.handler_type, route.handler), err, route.path, req, res) catch |e| error_handler(e, req, res);
                     }
                 }
+            }
+            // not found
+            if (matched == 0) {
+                _ = error_handler(error.Notfound, req, res);
             }
         }
 
@@ -141,16 +146,16 @@ test "index" {
 
     var req = request{ .code = 2, .method = .Get, .path = "/" };
     var res = try std.debug.global_allocator.create(response);
-    res.* = response{ .status_code = 500 };
+    res.* = response{ .status_code = .InternalServerError };
 
     router.start(Settings{
         .port = 8080,
     }, &req, res);
-    assert(res.status_code == 200);
+    assert(res.status_code == .Ok);
 }
 
 fn index(req: Request, res: Response) void {
-    res.status_code = 200;
+    res.status_code = .Ok;
     return;
 }
 
@@ -159,18 +164,18 @@ test "args" {
 
     var req = request{ .code = 2, .method = .Get, .path = "/a/14" };
     var res = try std.debug.global_allocator.create(response);
-    res.* = response{ .status_code = 500 };
+    res.* = response{ .status_code = .InternalServerError };
 
     router.start(Settings{
         .port = 8080,
     }, &req, res);
-    assert(res.status_code == 200);
+    assert(res.status_code == .Ok);
 }
 
 fn a(req: Request, res: Response, args: *const struct {
     num: u32,
 }) void {
-    res.status_code = 200;
+    res.status_code = .Ok;
     assert(args.num == 14);
     return;
 }
