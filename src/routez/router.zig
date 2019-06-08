@@ -146,7 +146,7 @@ test "index" {
 
     var req = request{ .method = .Get, .path = "/", .body = "", .version = .Http11, .headers = undefined };
     var res = try std.debug.global_allocator.create(response);
-    res.* = response{ .status_code = .InternalServerError, .headers = undefined, .body = "" };
+    res.* = response{ .status_code = .InternalServerError, .headers = undefined, .body = "", .version = .Http11 };
 
     router.start(Settings{
         .port = 8080,
@@ -164,7 +164,7 @@ test "args" {
 
     var req = request{ .method = .Get, .path = "/a/14", .body = "", .version = .Http11, .headers = undefined };
     var res = try std.debug.global_allocator.create(response);
-    res.* = response{ .status_code = .InternalServerError, .headers = undefined, .body = "" };
+    res.* = response{ .status_code = .InternalServerError, .headers = undefined, .body = "", .version = .Http11 };
 
     router.start(Settings{
         .port = 8080,

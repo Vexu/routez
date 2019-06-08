@@ -1,5 +1,6 @@
 const std = @import("std");
 const mem = std.mem;
+const Allocator = mem.Allocator;
 const assert = std.debug.assert;
 use @import("headers.zig");
 use @import("version.zig");
@@ -12,26 +13,27 @@ pub const Request = struct {
     body: []const u8,
     version: Version,
 
-    pub const Error = error {
+    pub const Error = error{
         InvalidMethod,
         TooShort,
         InvalidPath,
         InvalidVersion,
         UnsupportedVersion,
-    } || Uri.Error;
+    } || Uri.Error || Headers.Error;
 
     //todo use instream?
-    pub fn parse(buffer: []const u8) Error!Request {
+    pub fn parse(allocator: *Allocator, buffer: []const u8) Error!Request {
         if (buffer.len < 15) {
             return Error.TooShort;
         }
-        var req = Request {
+        var req = Request{
             .method = undefined,
             .headers = undefined,
             .path = undefined,
             .body = "",
             .version = undefined,
         };
+        req.headers.map = Headers.HeaderMap.init(allocator);
         var index: usize = 0;
 
         switch (buffer[0]) {
@@ -109,7 +111,7 @@ pub const Request = struct {
             return Error.InvalidChar;
         }
         index += 1;
-        
+
         const uri = try Uri.parse(buffer[index..]);
         if (uri.path[0] != '/') {
             return Error.InvalidPath;
@@ -120,36 +122,36 @@ pub const Request = struct {
         if (buffer[index..].len < 11) {
             return Error.TooShort;
         }
-        
+
         if (buffer[index] != ' ') {
             return Error.InvalidChar;
         }
         index += 1;
-        
-        if (!mem.eql(u8, buffer[index..index+5], "HTTP/")) {
+
+        if (!mem.eql(u8, buffer[index .. index + 5], "HTTP/")) {
             return Error.InvalidChar;
         }
         index += 5;
 
         switch (buffer[index]) {
             '0' => {
-                if (buffer[index+2] == '9') {
+                if (buffer[index + 2] == '9') {
                     req.version = .Http09;
                 } else {
                     return Error.InvalidVersion;
                 }
             },
             '1' => {
-                if (buffer[index+2] == '0') {
+                if (buffer[index + 2] == '0') {
                     req.version = .Http10;
-                } else if (buffer[index+2] == '1') {
+                } else if (buffer[index + 2] == '1') {
                     req.version = .Http11;
                 } else {
                     return Error.InvalidVersion;
                 }
             },
             '2' => {
-                if (buffer[index+2] == '0') {
+                if (buffer[index + 2] == '0') {
                     req.version = .Http20;
                 } else {
                     return Error.InvalidVersion;
@@ -166,8 +168,6 @@ pub const Request = struct {
 
         index += 2;
 
-        index += Headers.parse(&req.headers, buffer[index..]);
-        
         if (req.version != .Http09) {
             if (buffer[index..].len < 2) {
                 return Error.TooShort;
@@ -176,11 +176,13 @@ pub const Request = struct {
             return req;
         }
 
+        index += try Headers.parse(&req.headers, buffer[index..]);
+
         if (buffer[index] != '\r' or buffer[index + 1] != '\n') {
             return Error.InvalidChar;
         }
         index += 2;
-        
+
         req.body = buffer[index..];
 
         return req;
@@ -201,24 +203,27 @@ pub const Method = enum {
 };
 
 test "HTTP/0.9" {
-    const req = try Request.parse("GET / HTTP/0.9\r\n");
+    const req = try Request.parse(std.debug.global_allocator, "GET / HTTP/0.9\r\n");
     assert(req.method == .Get);
     assert(mem.eql(u8, req.path, "/"));
     assert(req.version == .Http09);
 }
 
 test "HTTP/1.1" {
-    const req = try Request.parse(
-        "POST /about HTTP/1.1\r\n\r\na body\n"
-    );
+    const req = try Request.parse(std.debug.global_allocator, "POST /about HTTP/1.1\r\n" ++
+        "expires: Mon, 08 Jul 2019 11:49:03 GMT\r\n" ++
+        "last-modified: Fri, 09 Nov 2018 06:15:00 GMT\r\n" ++
+        "\r\na body\n");
     assert(req.method == .Post);
     assert(mem.eql(u8, req.path, "/about"));
     assert(req.version == .Http11);
     assert(mem.eql(u8, req.body, "a body\n"));
+    assert(mem.eql(u8, req.headers.map.get("expires").?.value, "Mon, 08 Jul 2019 11:49:03 GMT"));
+    assert(mem.eql(u8, req.headers.map.get("last-modified").?.value, "Fri, 09 Nov 2018 06:15:00 GMT"));
 }
 
 test "HTTP/3.0" {
-    _ = Request.parse("POST /about HTTP/3.0\r\n\r\n") catch |e| {
+    _ = Request.parse(std.debug.global_allocator, "POST /about HTTP/3.0\r\n\r\n") catch |e| {
         assert(e == Request.Error.UnsupportedVersion);
         return;
     };
