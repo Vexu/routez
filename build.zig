@@ -4,6 +4,7 @@ pub fn build(b: *Builder) void {
     const mode = b.standardReleaseOptions();
     const tests = b.addTest("test.zig");
     tests.setBuildMode(mode);
+    tests.addPackagePath("zuri", "zuri/src/zuri.zig");
 
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&tests.step);
@@ -13,6 +14,7 @@ pub fn build(b: *Builder) void {
     var basic = b.addExecutable("basic", "examples/basic.zig");
     basic.setBuildMode(mode);
     basic.addPackagePath("routez", "src/routez.zig");
+    basic.addPackagePath("zuri", "zuri/src/zuri.zig");
     basic.setOutputDir("zig-cache");
 
     b.installArtifact(basic);

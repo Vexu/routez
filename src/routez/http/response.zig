@@ -1,9 +1,11 @@
 const std = @import("std");
 const io = std.io;
+use @import("headers.zig");
 
 pub const Response = struct {
     status_code: StatusCode,
-    // body: [] u8,todo outstream
+    headers: Headers,
+    body: [] u8, //todo outstream
 };
 
 pub const StatusCode = enum(u16) {

@@ -144,9 +144,9 @@ fn createRoute(method: Method, path: []const u8, handler: var) Route {
 test "index" {
     const router = comptime Router(&[]Route{get("/", index)}, defaultErrorHandler);
 
-    var req = request{ .code = 2, .method = .Get, .path = "/" };
+    var req = request{ .method = .Get, .path = "/", .body = "", .version = .Http11, .headers = undefined };
     var res = try std.debug.global_allocator.create(response);
-    res.* = response{ .status_code = .InternalServerError };
+    res.* = response{ .status_code = .InternalServerError, .headers = undefined, .body = "" };
 
     router.start(Settings{
         .port = 8080,
@@ -162,9 +162,9 @@ fn index(req: Request, res: Response) void {
 test "args" {
     const router = comptime Router(&[]Route{get("/a/{num}", a)}, defaultErrorHandler);
 
-    var req = request{ .code = 2, .method = .Get, .path = "/a/14" };
+    var req = request{ .method = .Get, .path = "/a/14", .body = "", .version = .Http11, .headers = undefined };
     var res = try std.debug.global_allocator.create(response);
-    res.* = response{ .status_code = .InternalServerError };
+    res.* = response{ .status_code = .InternalServerError, .headers = undefined, .body = "" };
 
     router.start(Settings{
         .port = 8080,

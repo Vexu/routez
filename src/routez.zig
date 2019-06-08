@@ -8,3 +8,8 @@ pub const version = struct {
     pub const patch = 0;
     pub const string = "0.0.0";
 };
+
+test "routez" {
+    _ = @import("routez/http.zig");
+    _ = @import("routez/router.zig");
+}
