@@ -181,6 +181,13 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
     if (state != .Path) {
         @compileError("Invalid route");
     }
+    comptime if (has_args) {
+        for (used) |u, i| {
+            if (!u) {
+                @compileError("handler argument '" ++ @typeInfo(Args).Struct.fields[i].name ++ "' is not given in the path");
+            }
+        }
+    };
     comptime const r = pathbuf[begin..index];
     if (!mem.eql(u8, r, path[path_index..])) {
         return;
