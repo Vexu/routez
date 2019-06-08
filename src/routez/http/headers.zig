@@ -1,5 +1,6 @@
 const std = @import("std");
 const mem = std.mem;
+const Allocator = mem.Allocator;
 const HashMap = std.HashMap;
 
 pub const Headers = struct {
@@ -10,7 +11,13 @@ pub const Headers = struct {
         OutOfMemory,
     };
 
-    pub const HeaderMap = HashMap([]const u8, []const u8, mem.hash_slice_u8, mem.eql_slice_u8);
+    const HeaderMap = HashMap([]const u8, []const u8, mem.hash_slice_u8, mem.eql_slice_u8);
+
+    pub fn init(allocator: *Allocator) Headers {
+        return Headers{
+            .map = HeaderMap.init(allocator),
+        };
+    }
 
     pub fn parse(h: *Headers, buffer: []const u8) Error!usize {
         const State = enum {

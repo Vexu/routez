@@ -28,12 +28,11 @@ pub const Request = struct {
         }
         var req = Request{
             .method = undefined,
-            .headers = undefined,
+            .headers = Headers.init(allocator),
             .path = undefined,
             .body = "",
             .version = undefined,
         };
-        req.headers.map = Headers.HeaderMap.init(allocator);
         var index: usize = 0;
 
         switch (buffer[0]) {
