@@ -1,13 +1,3 @@
-# routez
-WIP
-
-http server with router
-
-## goals
-offer functionality similar to express.js and the like
-
-## example
-```Zig
 const std = @import("std");
 const warn = std.debug.warn;
 const assert = std.debug.assert;
@@ -54,5 +44,3 @@ fn postHandler(req: Request, res: Response, args: *const struct {
     res.status_code = 200;
     warn("Hello from post, post_num is {}\n", args.post_num);
 }
-
-```

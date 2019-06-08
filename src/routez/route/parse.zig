@@ -34,7 +34,8 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
     comptime var index = 0;
     comptime var begin = 0;
     comptime var fmt_begin = 0;
-    comptime var pathbuf: [256]u8 = undefined;
+    // worst-case scenario every byte in route needs to be percentage encoded
+    comptime var pathbuf: [route.len * 3]u8 = undefined;
     var path_index: usize = 0;
     var len: usize = undefined;
 
@@ -180,10 +181,11 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
     if (state != .Path) {
         @compileError("Invalid route");
     }
-    // todo
-    // if (!mem.eql(u8, pathbuf[begin..], path[path_index..])) {
-    //     return false;
-    // }
+    comptime const r = pathbuf[begin..index];
+    if (!mem.eql(u8, r, path[path_index..])) {
+        return;
+    }
+
     if (has_args) {
         if (Errs != null) {
             try handler(req, res, &args);
