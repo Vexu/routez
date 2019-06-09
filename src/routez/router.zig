@@ -7,92 +7,99 @@ use @import("route/parse.zig");
 
 use @import("http.zig");
 
-pub const ErrorHandler = fn (anyerror, Request, Response) u32;
-
-pub fn defaultErrorHandler(err: anyerror, req: Request, res: Response) u32 {
-    res.status_code = .InternalServerError;
-    return 1;
-}
+pub const ErrorHandler = struct {
+    handler: fn (Request, Response) void,
+    err: anyerror,
+};
 
 // todo include error handlers and other mixins in routes
-pub fn Router(comptime routes: []Route, comptime error_handler: ErrorHandler) Handler {
+pub fn Router(comptime routes: []Route, comptime err_handlers: ?[]ErrorHandler) Handler {
+    if (routes.len == 0) {
+        @compileError("Router must have at least one route");
+    }
     return struct {
-        fn handle(req: Request, res: Response) void {
-            var matched: u32 = 0;
+        fn handle(req: Request, res: Response) !void {
             inline for (routes) |route| {
                 comptime var type_info = @typeInfo(route.handler_type).Fn;
-                comptime var err = switch (@typeId(type_info.return_type.?)) {
-                    TypeId.ErrorUnion => type_info.return_type.?.ErrorUnion.error_set,
+                comptime var err: ?type = switch (@typeId(type_info.return_type.?)) {
+                    TypeId.ErrorUnion => @typeInfo(type_info.return_type.?).ErrorUnion.error_set,
                     else => null,
                 };
                 var method = route.method;
 
                 // try matching if method is correct or handler accepts all
-                if (method == .All or req.method == method) {
+                if (method == null or req.method == method.?) {
                     if (err == null) {
-                        matched += match(@ptrCast(route.handler_type, route.handler), err, route.path, req, res);
+                        return match(@ptrCast(route.handler_type, route.handler), err, route.path, req, res, null);
                     } else {
-                        matched += match(@ptrCast(route.handler_type, route.handler), err, route.path, req, res) catch |e| error_handler(e, req, res);
+                        return match(@ptrCast(route.handler_type, route.handler), err, route.path, req, res, null) catch |e| if (err_handlers == null) error.HandleFailed else return handleError(e, req, res);
                     }
                 }
             }
             // not found
-            if (matched == 0) {
-                _ = error_handler(error.Notfound, req, res);
+            return if (err_handlers == null) error.HandleFailed else return handleError(error.Notfound, req, res);
+        }
+
+        fn handleError(err: anyerror, req: Request, res: Response) error{HandleFailed}!void {
+            inline for (err_handlers) |e| {
+                if (err == e.err) {
+                    return e.handler(req, res);
+                }
             }
+            return error.HandleFailed;
         }
     }.handle;
 }
 
 pub const Route = struct {
     path: []const u8,
-    method: Method,
+    method: ?Method,
     handler: fn () void,
     handler_type: type,
 };
 
 pub fn all(path: []const u8, handler: var) Route {
-    return createRoute(.All, path, handler);
+    return createRoute(null, path, handler);
 }
 
 pub fn get(path: []const u8, handler: var) Route {
-    return createRoute(.Get, path, handler);
+    return createRoute(Method.Get, path, handler);
 }
 
 pub fn head(path: []const u8, handler: var) Route {
-    return createRoute(.Head, path, handler);
+    return createRoute(Method.Head, path, handler);
 }
 
 pub fn post(path: []const u8, handler: var) Route {
-    return createRoute(.Post, path, handler);
+    return createRoute(Method.Post, path, handler);
 }
 
 pub fn put(path: []const u8, handler: var) Route {
-    return createRoute(.Put, path, handler);
+    return createRoute(Method.Put, path, handler);
 }
 
 pub fn delete(path: []const u8, handler: var) Route {
-    return createRoute(.Delete, path, handler);
+    return createRoute(Method.Delete, path, handler);
 }
 
 pub fn connect(path: []const u8, handler: var) Route {
-    return createRoute(.Connect, path, handler);
+    return createRoute(Method.Connect, path, handler);
 }
 
 pub fn options(path: []const u8, handler: var) Route {
-    return createRoute(.Options, path, handler);
+    return createRoute(Method.Options, path, handler);
 }
 
 pub fn trace(path: []const u8, handler: var) Route {
-    return createRoute(.Trace, path, handler);
+    return createRoute(Method.Trace, path, handler);
 }
 
 pub fn patch(path: []const u8, handler: var) Route {
-    return createRoute(.Patch, path, handler);
+    return createRoute(Method.Patch, path, handler);
 }
 
 /// add route with given method
-fn createRoute(method: Method, path: []const u8, handler: var) Route {
+fn createRoute(method: ?Method, path: []const u8, handler: var) Route {
     const t = @typeInfo(@typeOf(handler));
     if (t != builtin.TypeId.Fn) {
         @compileError("handler must be a function");
@@ -133,41 +140,121 @@ fn createRoute(method: Method, path: []const u8, handler: var) Route {
     };
 }
 
-// test "index" {
-//     const router = comptime Router(&[]Route{get("/", index)}, defaultErrorHandler);
+pub fn subRoute(allocator: *std.mem.Allocator, route: []const u8, comptime routes: []Route, comptime err_handlers: ?[]ErrorHandler) Route {
+    if (routes.len == 0) {
+        @compileError("Router must have at least one route");
+    }
+    const handler = struct {
+        fn handle(req: Request, res: Response, args: *const struct {
+            path: []const u8,
+        }) !void {
+            inline for (routes) |r| {
+                comptime var type_info = @typeInfo(r.handler_type).Fn;
+                comptime var err: ?type = switch (@typeId(type_info.return_type.?)) {
+                    TypeId.ErrorUnion => @typeInfo(type_info.return_type.?).ErrorUnion.error_set,
+                    else => null,
+                };
+                var method = r.method;
 
-//     var req = request{ .method = .Get, .path = "/", .body = "", .version = .Http11, .headers = undefined };
-//     var res = try std.debug.global_allocator.create(response);
-//     res.* = response{ .status_code = .InternalServerError, .headers = undefined, .body = "", .version = .Http11 };
+                // try matching if method is correct or handler accepts all
+                if (method == null or req.method == method.?) {
+                    if (err == null) {
+                        return match(@ptrCast(r.handler_type, r.handler), err, r.path, req, res, args.path);
+                    } else {
+                        return match(@ptrCast(r.handler_type, r.handler), err, route.path, req, res, args.path) catch |e| if (err_handlers == null) error.HandleFailed else return handleError(e, req, res);
+                    }
+                }
+            }
+            // not found
+            return if (err_handlers == null) error.HandleFailed else return handleError(error.Notfound, req, res);
+        }
 
-//     router.start(Settings{
-//         .port = 8080,
-//     }, &req, res);
-//     assert(res.status_code == .Ok);
-// }
+        fn handleError(err: anyerror, req: Request, res: Response) error{HandleFailed}!void {
+            inline for (err_handlers) |e| {
+                if (err == e.err) {
+                    return e.handler(req, res);
+                }
+            }
+            return error.HandleFailed;
+        }
+    }.handle;
 
-// fn index(req: Request, res: Response) void {
-//     res.status_code = .Ok;
-//     return;
-// }
+    const path = if (route[route.len - 1] == '/') route[0 .. route.len - 2] ++ "{path;}" else route ++ "{path;}";
+    return createRoute(Method.Get, path, handler);
+}
 
-// test "args" {
-//     const router = comptime Router(&[]Route{get("/a/{num}", a)}, defaultErrorHandler);
+// todo implement
+pub fn static(allocator: *Allocator, local_path: []const u8, remote_path: []const u8) Route {
+    @compileError("Unimplemented");
+    const handler = struct {
+        fn staticHandler(req: Request, res: Response, args: struct {
+            path: []const u8,
+        }) !void {
+            comptime const path = if (local_path[local_path.len - 1] == '/') remote_path else rlocal_path ++ "/";
+        }
+    }.handler;
 
-//     var req = request{ .method = .Get, .path = "/a/14", .body = "", .version = .Http11, .headers = undefined };
-//     var res = try std.debug.global_allocator.create(response);
-//     res.* = response{ .status_code = .InternalServerError, .headers = undefined, .body = "", .version = .Http11 };
+    const path = if (remote_path[remote_path.len - 1] == '/') remote_path ++ "{path;}" else remote_path ++ "/{path;}";
+    return createRoute(Method.Get, path, handler);
+}
 
-//     router.start(Settings{
-//         .port = 8080,
-//     }, &req, res);
-//     assert(res.status_code == .Ok);
-// }
+test "index" {
+    const handler = comptime Router(&[]Route{get("/", indexHandler)}, null);
 
-// fn a(req: Request, res: Response, args: *const struct {
-//     num: u32,
-// }) void {
-//     res.status_code = .Ok;
-//     assert(args.num == 14);
-//     return;
-// }
+    var req = request{ .method = .Get, .path = "/", .body = "", .version = .Http11, .headers = undefined };
+    var res = try std.debug.global_allocator.create(response);
+    res.* = response{ .status_code = .InternalServerError, .headers = undefined };
+    try handler(&req, res);
+    assert(res.status_code == .Ok);
+}
+
+fn indexHandler(req: Request, res: Response) void {
+    res.status_code = .Ok;
+}
+
+test "args" {
+    const handler = comptime Router(&[]Route{get("/a/{num}", argHandler)}, null);
+
+    var req = request{ .method = .Get, .path = "/a/14", .body = "", .version = .Http11, .headers = undefined };
+    var res = try std.debug.global_allocator.create(response);
+    res.* = response{ .status_code = .InternalServerError, .headers = undefined };
+
+    try handler(&req, res);
+}
+
+fn argHandler(req: Request, res: Response, args: *const struct {
+    num: u32,
+}) void {
+    assert(args.num == 14);
+}
+
+test "delim string" {
+    const handler = comptime Router(&[]Route{get("/{str;}", delimHandler)}, null);
+
+    var req = request{ .method = .Get, .path = "/all/of/this.html", .body = "", .version = .Http11, .headers = undefined };
+    var res = try std.debug.global_allocator.create(response);
+    res.* = response{ .status_code = .InternalServerError, .headers = undefined };
+
+    try handler(&req, res);
+}
+
+fn delimHandler(req: Request, res: Response, args: *const struct {
+    str: []const u8,
+}) void {
+    assert(std.mem.eql(u8, args.str, "all/of/this.html"));
+}
+
+test "subRoute" {
+    const handler = comptime Router(&[]Route{subRoute(std.debug.global_allocator, "/sub", &[]Route{get("/other", subRouteHandler)}, null)}, null);
+
+    var req = request{ .method = .Get, .path = "/sub/other", .body = "", .version = .Http11, .headers = undefined };
+    var res = try std.debug.global_allocator.create(response);
+    res.* = response{ .status_code = .InternalServerError, .headers = undefined };
+
+    try handler(&req, res);
+    assert(res.status_code == .Ok);
+}
+
+fn subRouteHandler(req: Request, res: Response) void {
+    res.status_code = .Ok;
+}

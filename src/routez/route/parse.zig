@@ -9,7 +9,7 @@ const assert = std.debug.assert;
 use @import("../http.zig");
 
 /// returns 1 if request matched route
-pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []const u8, req: Request, res: Response) (if (Errs != null) Errs.?!u32 else u32) {
+pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []const u8, req: Request, res: Response, path_overload: ?[]const u8) (if (Errs != null) Errs.?!void else void) {
     const has_args = @typeInfo(@typeOf(handler)).Fn.args.len == 3;
     const Args = if (has_args) @typeInfo(@typeInfo(@typeOf(handler)).Fn.args[2].arg_type.?).Pointer.child else void;
 
@@ -21,7 +21,7 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
         comptime mem.set(bool, &used, false);
     }
 
-    const path = req.path;
+    const path = if (path_overload) |p| p else req.path;
 
     const State = enum {
         Start,
@@ -37,6 +37,7 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
     comptime var fmt_begin = 0;
     // worst-case scenario every byte in route needs to be percentage encoded
     comptime var pathbuf: [route.len * 3]u8 = undefined;
+    // comptime optional = false;
     var path_index: usize = 0;
     var len: usize = undefined;
 
@@ -51,23 +52,30 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
                 else => @compileError("route must begin with a '/'"),
             },
             .Path => switch (c) {
+                // '?' => {
+                //     if (!optional) {
+                //         @compileError("previous character is not optional");
+                //     }
+                // },
                 'a'...'z', 'A'...'Z', '0'...'9', '-', '.', '_', '~', '!', '$', '&', '\'', '(', ')', '*', '+', ',', ';', '=', ':', '@', '%', '/' => comptime {
                     pathbuf[index] = c;
                     index += 1;
                     if (c == '%') {
                         state = .AmperStart;
                     }
+                    // optional = true;
                 },
                 '{' => {
                     if (!has_args) {
                         @compileError("handler does not accept path arugments");
                     }
+                    // optional = false;
                     state = .Format;
                     fmt_begin = i + 1;
                     const r = pathbuf[begin..index];
                     begin = index;
                     if (!mem.eql(u8, r, path[path_index .. path_index + r.len])) {
-                        return 0;
+                        return;
                     }
                     path_index += r.len;
                 },
@@ -77,6 +85,7 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
                     pathbuf[index + 1] = hex_digits[(c & 0xF0) >> 4];
                     pathbuf[index + 2] = hex_digits[c & 0x0F];
                     index += 3;
+                    // optional = true;
                 },
             },
             .AmperStart, .AmperFirst => comptime switch (c) {
@@ -97,7 +106,7 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
                     comptime var number = true;
                     comptime var field_name: []const u8 = undefined;
                     comptime var field_type: type = undefined;
-                    comptime var delim: u8 = '.';
+                    comptime var delim: []const u8 = "/.";
 
                     comptime {
                         const Fstate = enum {
@@ -105,21 +114,32 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
                             Radix,
                             Done,
                             Fmt,
-                            Delim,
                         };
                         var fstate = .Name;
                         var fmt = route[fmt_begin..i];
+                        if (fmt.len == 0) {
+                            @compileError("path argument's name must at least one character");
+                        }
                         for (fmt) |fc, fi| {
                             switch (fstate) {
                                 .Name => switch (fc) {
                                     ';' => {
+                                        if (fi == 0) {
+                                            @compileError("path argument's name must at least one character");
+                                        }
                                         field_name = fmt[0..fi];
 
                                         canUse(Args, field_name, &used);
                                         field_type = @typeOf(@field(args, field_name));
                                         verifyField(field_type, &number);
 
-                                        fstate = if (number) .Fmt else .Delim;
+                                        if (number) {
+                                            fstate = .Fmt;
+                                        } else {
+                                            delim = fmt[fi + 1..];
+                                            fstate = .Done;
+                                            break;
+                                        }
                                     },
                                     else => {},
                                 },
@@ -141,11 +161,7 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
                                     },
                                     else => @compileError("invalid format character"),
                                 },
-                                .Delim => { //todo unicode?
-                                    delim = fc;
-                                    fstate = .Done;
-                                },
-                                .Done => @compileError("unexpected character " ++ (if (number) "after format" else "after delimiter") ++ " '" ++ fmt[fi .. fi + 1] ++ "'"),
+                                .Done => @compileError("unexpected character after format '" ++ fmt[fi .. fi + 1] ++ "'"),
                                 else => unreachable,
                             }
                         }
@@ -156,8 +172,8 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
                             field_type = @typeOf(@field(args, field_name));
                             verifyField(field_type, &number);
                         }
-                        if (radix == 0 or radix > 36) {
-                            @compileError("radix must be in range [0,36]");
+                        if (radix < 2 or radix > 36) {
+                            @compileError("radix must be in range [2,36]");
                         }
                     }
                     len = 0;
@@ -165,11 +181,16 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
                     if (number) {
                         @field(args, field_name) = getNum(field_type, path[path_index..], radix, &len);
                     } else {
-                        @field(args, field_name) = getString(path[path_index..], delim, &len);
+                        if (!comptime mem.eql(u8, delim, "")) {
+                            @field(args, field_name) = getString(path[path_index..], delim, &len);
+                        } else {
+                            @field(args, field_name) = path[path_index..];
+                            len += path[path_index..].len;
+                        }
                     }
                     // route is incorrect if the argument given is zero sized
                     if (len == 0) {
-                        return 0;
+                        return;
                     }
                     path_index += len;
 
@@ -189,9 +210,9 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
             }
         }
     };
-    comptime const r = pathbuf[begin..index];
+    const r = pathbuf[begin..index];
     if (!mem.eql(u8, r, path[path_index..])) {
-        return 0;
+        return;
     }
 
     if (has_args) {
@@ -207,7 +228,6 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
             handler(req, res);
         }
     }
-    return 1;
 }
 
 fn canUse(comptime Args: type, field_name: []const u8, used: []bool) void {
@@ -263,9 +283,18 @@ fn getNum(comptime T: type, path: []const u8, radix: u8, len: *usize) T {
     return res;
 }
 
-fn getString(path: []const u8, delim: u8, len: *usize) []const u8 {
+fn getString(path: []const u8, comptime delim: []const u8, len: *usize) []const u8 {
+    if (delim.len == 0) {
+        @compileError("internal Error");
+    }
     for (path) |c, i| {
-        if (c == delim or c == '/') {
+        var done = false;
+
+        inline for (delim) |d| {
+            done = done or c == d;
+        }
+
+        if (done) {
             len.* = i;
             return path[0..i];
         }
