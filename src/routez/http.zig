@@ -1,18 +1,18 @@
 const req = @import("http/request.zig");
 const res = @import("http/response.zig");
-const headers = @import("http/headers.zig");
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const ZServer = std.event.net.Server;
 const Loop = std.event.Loop;
 const Address = std.net.Address;
 const File = std.os.File;
+pub use @import("http/headers.zig");
+pub use @import("http/version.zig");
 
 use @import("router.zig");
 
-pub const Headers = headers.Headers;
-
 pub const Method = req.Method;
+pub const StatusCode = res.StatusCode;
 
 pub const Request = *const req.Request;
 pub const Response = *res.Response;
@@ -20,7 +20,7 @@ pub const Response = *res.Response;
 pub const request = req.Request;
 pub const response = res.Response;
 
-pub const Handler = fn handle(Request, Response) void;
+pub const Handler = fn handle(Request, Response) anyerror!void;
 
 test "http" {
     _ = @import("http/request.zig");
@@ -28,37 +28,38 @@ test "http" {
     _ = @import("http/headers.zig");
 }
 
-pub const Settings = struct {
-    multithreaded: bool,
-    address: Address,
-};
-
 pub const Server = struct {
     server: ZServer,
-    router: Handler,
+    handler: Handler,
+    loop: Loop,
 
-    pub fn listen(allocator: *Allocator, settings: Settings, router: Handler) !Server {
-        var loop: Loop = undefined;
-        const loop_init = if (settings.multithreaded) Loop.initMultiThreaded else Loop.initSingleThreaded;
-        try loop_init(&loop, allocator);
-        errdefer loop.deinit();
+    pub const Properties = struct {
+        multithreaded: bool,
+    };
+
+    pub fn init(allocator: *Allocator, properties: Properties, comptime routes: []Route, comptime err_handlers: ?[]ErrorHandler) !Server {
+        const loop_init = if (properties.multithreaded) Loop.initMultiThreaded else Loop.initSingleThreaded;
 
         var s = Server{
-            .server = ZServer.init(&loop),
-            .router = router,
+            .server = undefined,
+            .handler = Router(routes, err_handlers),
+            .loop = undefined,
         };
-        defer s.server.deinit();
-        try s.server.listen(&settings.address, handleRequest);
-
-        loop.run();
-
+        try loop_init(&s.loop, allocator);
+        s.server = ZServer.init(&s.loop);
         return s;
+    }
+
+    pub fn listen(server: *Server, address: *Address) !void {
+        errdefer server.close();
+        try server.server.listen(address, handleRequest);
+        server.loop.run();
     }
 
     pub fn close(s: *Server) void {
         s.server.close();
         s.server.deinit();
-        s.server.deinit();
+        s.loop.deinit();
     }
 
     async<*Allocator> fn handleRequest(server: *ZServer, addr: *const std.net.Address, file: File) void {
@@ -85,6 +86,16 @@ pub const Server = struct {
     }
 };
 
-// test "" {
-//     _ = try Server.listen(std.debug.global_allocator, Settings{ .address = Address.initIp4(std.net.parseIp4("127.0.0.1") catch unreachable, 1234), .multithreaded = true }, Router(&[]Route{}, defaultErrorHandler));
+// test "server" {
+//     var server = try Server.init(
+//         std.debug.global_allocator,
+//         Server.Properties{ .multithreaded = true },
+//         &[]Route{get("/", indexHandler)},
+//         null,
+//     );
+//     try server.listen(&Address.initIp4(try std.net.parseIp4("127.0.0.1"), 5555));
 // }
+
+fn indexHandler(_: Request, resp: Response) void {
+    resp.status_code = .Ok;
+}

@@ -1,46 +1,41 @@
 const std = @import("std");
-const warn = std.debug.warn;
-const assert = std.debug.assert;
 use @import("routez");
 
 pub fn main() !void {
-    const router = comptime Router(&[]Route{
-        all("/", indexHandler),
-        get("/about", aboutHandler),
-        get("/about/more", aboutHandler2),
-        get("/post/{post_num}", postHandler),
-        get("/post/{post_num}/", postHandler),
-    }, defaultErrorHandler);
+    var server = try Server.init(
+        std.debug.global_allocator,
+        Server.Properties{ .multithreaded = true },
+        &[]Route{
+            all("/", indexHandler),
+            get("/about", aboutHandler),
+            get("/about/more", aboutHandler2),
+            get("/post/{post_num}/?", postHandler),
+            static(std.debug.global_allocator, "/public/static", "/static"),
+        },
+        null,
+    );
 
-    var req = request{ .method = .Get, .path = "/post/1234", .body = "", .headers = undefined, .version = .Http11 };
-    var res = try std.debug.global_allocator.create(response);
-    res.* = response{ .status_code = .InternalServerError, .body = "", .headers = undefined };
-
-    // start currently takes req and res for testing purposes
-    router.start(Settings{
-        .port = 8080,
-    }, &req, res);
-    assert(res.status_code == .Ok);
+    try server.listen(&Address.initIp4(try std.net.parseIp4("127.0.0.1"), 8080));
 }
 
 fn indexHandler(req: Request, res: Response) void {
     res.status_code = .Ok;
-    warn("Hello from index\n");
+    res.write("Hello from index\n");
 }
 
 fn aboutHandler(req: Request, res: Response) void {
     res.status_code = .Ok;
-    warn("Hello from about\n");
+    res.write("Hello from about\n");
 }
 
 fn aboutHandler2(req: Request, res: Response) void {
     res.status_code = .Ok;
-    warn("Hello from about2\n");
+    res.write("Hello from about2\n");
 }
 
 fn postHandler(req: Request, res: Response, args: *const struct {
     post_num: []const u8,
 }) void {
     res.status_code = .Ok;
-    warn("Hello from post, post_num is {}\n", args.post_num);
+    res.write("Hello from post, post_num is {}\n", args.post_num);
 }

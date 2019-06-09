@@ -132,6 +132,7 @@ pub const Request = struct {
         }
         index += 5;
 
+        // todo index + 1 must be '.'
         switch (buffer[index]) {
             '0' => {
                 if (buffer[index + 2] == '9') {
@@ -150,11 +151,12 @@ pub const Request = struct {
                 }
             },
             '2' => {
-                if (buffer[index + 2] == '0') {
-                    req.version = .Http20;
-                } else {
-                    return Error.InvalidVersion;
-                }
+                return Error.UnsupportedVersion;
+                // if (buffer[index + 2] == '0') {
+                //     req.version = .Http20;
+                // } else {
+                //     return Error.InvalidVersion;
+                // }
             },
             '3' => return Error.UnsupportedVersion,
             else => return Error.InvalidVersion,
@@ -189,7 +191,6 @@ pub const Request = struct {
 };
 
 pub const Method = enum {
-    All,
     Get,
     Head,
     Post,
