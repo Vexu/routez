@@ -4,7 +4,7 @@ use @import("headers.zig");
 pub const Response = struct {
     status_code: StatusCode,
     headers: Headers,
-    body: OutStream.Stream,
+    body: *OutStream.Stream,
 };
 
 pub const StatusCode = enum(u16) {

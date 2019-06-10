@@ -74,7 +74,7 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
                     fmt_begin = i + 1;
                     const r = pathbuf[begin..index];
                     begin = index;
-                    if (!mem.eql(u8, r, path[path_index .. path_index + r.len])) {
+                    if (path.len < r.len or !mem.eql(u8, r, path[path_index .. path_index + r.len])) {
                         return;
                     }
                     path_index += r.len;
