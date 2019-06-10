@@ -3,6 +3,7 @@ const assert = std.debug.assert;
 const builtin = @import("builtin");
 const TypeInfo = builtin.TypeInfo;
 const TypeId = builtin.TypeId;
+const mime = @import("mime.zig");
 use @import("route/parse.zig");
 
 use @import("http.zig");
@@ -183,16 +184,27 @@ pub fn subRoute(allocator: *std.mem.Allocator, route: []const u8, comptime route
     return createRoute(Method.Get, path, handler);
 }
 
-// todo implement
-pub fn static(allocator: *Allocator, local_path: []const u8, remote_path: []const u8) Route {
-    @compileError("Unimplemented");
+pub fn static(allocator: *std.mem.Allocator, local_path: []const u8, remote_path: []const u8, max_size: usize) Route {
     const handler = struct {
-        fn staticHandler(req: Request, res: Response, args: struct {
+        fn staticHandler(req: Request, res: Response, args: *const struct {
             path: []const u8,
         }) !void {
-            comptime const path = if (local_path[local_path.len - 1] == '/') remote_path else rlocal_path ++ "/";
+            const path = if (local_path[local_path.len - 1] == '/') local_path else local_path ++ "/";
+            const full_path = try std.os.path.join(allocator, [][]const u8{path, args.path});
+            defer allocator.free(full_path);
+
+            // todo improve
+            var stream = (try std.os.File.openRead(full_path)).inStream();
+            defer stream.file.close();
+            const content = try stream.stream.readAllAlloc(allocator, max_size);
+            defer allocator.free(content);
+            try res.body.write(content);
+
+            const mimetype = if (std.mem.lastIndexOfScalar(u8, args.path, '.')) |i| mime.fromExtension(args.path[i + 1 ..]) else mime.default;
+            _ = try res.headers.map.put("Content-Type", mimetype);
+            res.status_code = .Ok;
         }
-    }.handler;
+    }.staticHandler;
 
     const path = if (remote_path[remote_path.len - 1] == '/') remote_path ++ "{path;}" else remote_path ++ "/{path;}";
     return createRoute(Method.Get, path, handler);
@@ -201,9 +213,20 @@ pub fn static(allocator: *Allocator, local_path: []const u8, remote_path: []cons
 test "index" {
     const handler = comptime Router(&[]Route{get("/", indexHandler)}, null);
 
-    var req = request{ .method = .Get, .path = "/", .query = "", .body = "", .version = .Http11, .headers = undefined };
+    var req = request{
+        .method = .Get,
+        .headers = undefined,
+        .path = "/",
+        .query = undefined,
+        .body = undefined,
+        .version = .Http11,
+    };
     var res = try std.debug.global_allocator.create(response);
-    res.* = response{ .status_code = .InternalServerError, .headers = undefined, .body = undefined };
+    res.* = response{
+        .status_code = .InternalServerError,
+        .headers = undefined,
+        .body = undefined,
+    };
     try handler(&req, res);
     assert(res.status_code == .Ok);
 }
@@ -215,9 +238,20 @@ fn indexHandler(req: Request, res: Response) void {
 test "args" {
     const handler = comptime Router(&[]Route{get("/a/{num}", argHandler)}, null);
 
-    var req = request{ .method = .Get, .path = "/a/14", .query = "", .body = "", .version = .Http11, .headers = undefined };
+    var req = request{
+        .method = .Get,
+        .headers = undefined,
+        .path = "/a/14",
+        .query = undefined,
+        .body = undefined,
+        .version = .Http11,
+    };
     var res = try std.debug.global_allocator.create(response);
-    res.* = response{ .status_code = .InternalServerError, .headers = undefined, .body = undefined };
+    res.* = response{
+        .status_code = .InternalServerError,
+        .headers = undefined,
+        .body = undefined,
+    };
 
     try handler(&req, res);
 }
@@ -231,9 +265,20 @@ fn argHandler(req: Request, res: Response, args: *const struct {
 test "delim string" {
     const handler = comptime Router(&[]Route{get("/{str;}", delimHandler)}, null);
 
-    var req = request{ .method = .Get, .path = "/all/of/this.html", .query = "", .body = "", .version = .Http11, .headers = undefined };
+    var req = request{
+        .method = .Get,
+        .headers = undefined,
+        .path = "/all/of/this.html",
+        .query = undefined,
+        .body = undefined,
+        .version = .Http11,
+    };
     var res = try std.debug.global_allocator.create(response);
-    res.* = response{ .status_code = .InternalServerError, .headers = undefined, .body = undefined };
+    res.* = response{
+        .status_code = .Processing,
+        .headers = undefined,
+        .body = undefined,
+    };
 
     try handler(&req, res);
 }
@@ -247,9 +292,20 @@ fn delimHandler(req: Request, res: Response, args: *const struct {
 test "subRoute" {
     const handler = comptime Router(&[]Route{subRoute(std.debug.global_allocator, "/sub", &[]Route{get("/other", subRouteHandler)}, null)}, null);
 
-    var req = request{ .method = .Get, .path = "/sub/other", .query = "", .body = "", .version = .Http11, .headers = undefined };
+    var req = request{
+        .method = .Get,
+        .path = "/sub/other",
+        .query = undefined,
+        .body = undefined,
+        .version = .Http11,
+        .headers = undefined,
+    };
     var res = try std.debug.global_allocator.create(response);
-    res.* = response{ .status_code = .InternalServerError, .headers = undefined, .body = undefined };
+    res.* = response{
+        .status_code = .Processing,
+        .headers = undefined,
+        .body = undefined,
+    };
 
     try handler(&req, res);
     assert(res.status_code == .Ok);
@@ -257,4 +313,33 @@ test "subRoute" {
 
 fn subRouteHandler(req: Request, res: Response) void {
     res.status_code = .Ok;
+}
+
+test "static files" {
+    const handler = comptime Router(&[]Route{static(
+        std.debug.global_allocator,
+        "assets",
+        "/static",
+        1024*1024,
+    )}, null);
+
+    var req = request{
+        .method = .Get,
+        .path = "/static/example-file.txt",
+        .query = undefined,
+        .body = undefined,
+        .version = .Http11,
+        .headers = undefined,
+    };
+    var res = try std.debug.global_allocator.create(response);
+    var stream = @import("http/response.zig").OutStream.init(std.debug.global_allocator);
+    res.* = response{
+        .status_code = .Processing,
+        .headers = Headers.init(std.debug.global_allocator),
+        .body = &stream.stream,
+    };
+
+    try handler(&req, res);
+    assert(std.mem.eql(u8, res.headers.map.get("Content-Type").?.value, "text/plain;charset=UTF-8"));
+    assert(std.mem.eql(u8, stream.buf.toSlice(), "Some text\n"));
 }
