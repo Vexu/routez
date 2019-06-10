@@ -4,6 +4,7 @@ use @import("headers.zig");
 pub const Response = struct {
     status_code: StatusCode,
     headers: Headers,
+    body: OutStream.Stream,
 };
 
 pub const StatusCode = enum(u16) {
@@ -17,6 +18,7 @@ pub const StatusCode = enum(u16) {
     Ok = 200,
     Created = 201,
     Accepted = 202,
+    NonAuthoritativeInformation = 203,
     NoContent = 204,
     ResetContent = 205,
     PartialContent = 206,
@@ -78,4 +80,96 @@ pub const StatusCode = enum(u16) {
     LoopDetected = 508,
     NotExtended = 510,
     NetworkAuthenticationRequired = 511,
+
+    pub fn toString(self: StatusCode) []const u8 {
+        return switch(self) {
+            .Continue => "Continue",
+            .SwitchingProtocols => "Switching Protocols",
+            .Processing => "Processing",
+            .EarlyHints => "Early Hints",
+
+            .Ok => "OK",
+            .Created => "Created",
+            .Accepted => "Accepted",
+            .NonAuthoritativeInformation => "Non-Authoritative Information",
+            .NoContent => "No Content",
+            .ResetContent => "Reset Content",
+            .PartialContent => "Partial Content",
+            .MultiStatus => "Multi Status",
+            .AlreadyReported => "Already Reported",
+            .ImUsed => "IM Used",
+
+            .MultipleChoices => "Multiple Choices",
+            .MovedPermanently => "Moved Permanently",
+            .Found => "Found",
+            .SeeOther => "See Other",
+            .NotModified => "Not Modified",
+            .UseProxy => "Use Proxy",
+            .SwitchProxy => "Switch Proxy",
+            .TemporaryRedirect => "Temporary Redirect",
+            .PermanentRedirect => "Permanent Redirect",
+
+            .BadRequest => "Bad Request",
+            .Unauthorized => "Unauthorized",
+            .PaymentRequired => "Payment Required",
+            .Forbidden => "Forbidden",
+            .NotFound => "Not Found",
+            .MethodNotAllowed => "Method Not Allowed",
+            .NotAcceptable => "Not Acceptable",
+            .ProxyAuthenticationRequired => "Proxy Authentication Required",
+            .RequestTimeout => "Request Timeout",
+            .Conflict => "Conflict",
+            .Gone => "Gone",
+            .LengthRequired => "Length Required",
+            .PreconditionFailed => "Precondition Failed",
+            .PayloadTooLarge => "Payload Too Large",
+            .UriTooLong => "URI Too Long",
+            .UnsupportedMediaType => "Unsupported Media Type",
+            .RangeNotSatisfiable => "Range Not Satisfiable",
+            .ExpectationFailed => "Expectation Failed",
+            .ImATeapot => "I'm a teapot",
+            .MisdirectedRequest => "Misdirected Request",
+            .UnprocessableEntity => "Unprocessable Entity",
+            .Locked => "Locked",
+            .FailedDependency => "Failed Dependency",
+            .TooEarly => "Too Early",
+            .UpgradeRequired => "Upgrade Required",
+            .PreconditionRequired => "Precondition Required",
+            .TooManyRequests => "Too Many Requests",
+            .RequestHeaderFieldsTooLarge => "Request Header Fields Too Large",
+            .UnavailableForLegalReasons => "Unavailable For Legal Reasons",
+
+            .InternalServerError => "Internal Server Error",
+            .NotImplemented => "Not Implemented",
+            .BadGateway => "Bad Gateway",
+            .ServiceUnavailable => "Service Unavailable",
+            .GatewayTimeout => "Gateway Timeout",
+            .HttpVersionNotSupported => "HTTP Version Not Supported",
+            .VariantAlsoNegotiates => "Variant Also Negotiates",
+            .InsufficientStorage => "Insufficient Storage",
+            .LoopDetected => "Loop Detected",
+            .NotExtended => "Not Extended",
+            .NetworkAuthenticationRequired => "Network Authentication Required",
+        };
+    }
+};
+
+pub const OutStream = struct {
+    buf: std.ArrayList(u8),
+    stream: Stream,
+
+    pub fn init(allocator: *std.mem.Allocator) OutStream {
+        return OutStream{
+            .buf = std.ArrayList(u8).init(allocator),
+            .stream = Stream{ .writeFn = writeFn },
+        };
+    }
+
+    pub const Error = error{OutOfMemory};
+    pub const Stream = std.io.OutStream(Error);
+
+    fn writeFn(out_stream: *Stream, bytes: []const u8) Error!void {
+        const self = @fieldParentPtr(OutStream, "stream", out_stream);
+        return self.buf.appendSlice(bytes);
+    }
 };

@@ -85,7 +85,7 @@ pub const Headers = struct {
                     switch (c) {
                         ' ', '\t' => {
                             state = .Value;
-                            begin = i + 1;
+                            // begin = i + 1; todo currently includes '\t' or ' ' in header value
                         },
                         '\r' => {
                             state = .Done;

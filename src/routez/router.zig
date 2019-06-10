@@ -201,9 +201,9 @@ pub fn static(allocator: *Allocator, local_path: []const u8, remote_path: []cons
 test "index" {
     const handler = comptime Router(&[]Route{get("/", indexHandler)}, null);
 
-    var req = request{ .method = .Get, .path = "/", .body = "", .version = .Http11, .headers = undefined };
+    var req = request{ .method = .Get, .path = "/", .query = "", .body = "", .version = .Http11, .headers = undefined };
     var res = try std.debug.global_allocator.create(response);
-    res.* = response{ .status_code = .InternalServerError, .headers = undefined };
+    res.* = response{ .status_code = .InternalServerError, .headers = undefined, .body = undefined };
     try handler(&req, res);
     assert(res.status_code == .Ok);
 }
@@ -215,9 +215,9 @@ fn indexHandler(req: Request, res: Response) void {
 test "args" {
     const handler = comptime Router(&[]Route{get("/a/{num}", argHandler)}, null);
 
-    var req = request{ .method = .Get, .path = "/a/14", .body = "", .version = .Http11, .headers = undefined };
+    var req = request{ .method = .Get, .path = "/a/14", .query = "", .body = "", .version = .Http11, .headers = undefined };
     var res = try std.debug.global_allocator.create(response);
-    res.* = response{ .status_code = .InternalServerError, .headers = undefined };
+    res.* = response{ .status_code = .InternalServerError, .headers = undefined, .body = undefined };
 
     try handler(&req, res);
 }
@@ -231,9 +231,9 @@ fn argHandler(req: Request, res: Response, args: *const struct {
 test "delim string" {
     const handler = comptime Router(&[]Route{get("/{str;}", delimHandler)}, null);
 
-    var req = request{ .method = .Get, .path = "/all/of/this.html", .body = "", .version = .Http11, .headers = undefined };
+    var req = request{ .method = .Get, .path = "/all/of/this.html", .query = "", .body = "", .version = .Http11, .headers = undefined };
     var res = try std.debug.global_allocator.create(response);
-    res.* = response{ .status_code = .InternalServerError, .headers = undefined };
+    res.* = response{ .status_code = .InternalServerError, .headers = undefined, .body = undefined };
 
     try handler(&req, res);
 }
@@ -247,9 +247,9 @@ fn delimHandler(req: Request, res: Response, args: *const struct {
 test "subRoute" {
     const handler = comptime Router(&[]Route{subRoute(std.debug.global_allocator, "/sub", &[]Route{get("/other", subRouteHandler)}, null)}, null);
 
-    var req = request{ .method = .Get, .path = "/sub/other", .body = "", .version = .Http11, .headers = undefined };
+    var req = request{ .method = .Get, .path = "/sub/other", .query = "", .body = "", .version = .Http11, .headers = undefined };
     var res = try std.debug.global_allocator.create(response);
-    res.* = response{ .status_code = .InternalServerError, .headers = undefined };
+    res.* = response{ .status_code = .InternalServerError, .headers = undefined, .body = undefined };
 
     try handler(&req, res);
     assert(res.status_code == .Ok);

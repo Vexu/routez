@@ -3,13 +3,13 @@ const mem = std.mem;
 const Allocator = mem.Allocator;
 const assert = std.debug.assert;
 use @import("headers.zig");
-use @import("version.zig");
 use @import("zuri");
 
 pub const Request = struct {
     method: Method,
     headers: Headers,
     path: []const u8,
+    query: []const u8,
     body: []const u8,
     version: Version,
 
@@ -30,6 +30,7 @@ pub const Request = struct {
             .method = undefined,
             .headers = Headers.init(allocator),
             .path = undefined,
+            .query = "",
             .body = "",
             .version = undefined,
         };
@@ -116,6 +117,7 @@ pub const Request = struct {
             return Error.InvalidPath;
         }
         req.path = uri.path;
+        req.query = uri.query;
         index += uri.len;
 
         if (buffer[index..].len < 11) {
@@ -200,6 +202,38 @@ pub const Method = enum {
     Options,
     Trace,
     Patch,
+
+    pub fn toString(self: Method) []const u8 {
+        return switch(self) {
+            .Get => "GET",
+            .Head => "HEAD",
+            .Post => "POST",
+            .Put => "PUT",
+            .Delete => "DELETE",
+            .Connect => "CONNECT",
+            .Options => "OPTIONS",
+            .Trace => "TRACE",
+            .Patch => "PATCH",
+        };
+    }
+};
+
+pub const Version = enum {
+    Http09,
+    Http10,
+    Http11,
+    Http20,
+    Http30,
+
+    pub fn toString(self: Version) []const u8 {
+        return switch(self) {
+            .Http09 => "HTTP/0.9",
+            .Http10 => "HTTP/1.0",
+            .Http11 => "HTTP/1.1",
+            .Http20 => "HTTP/2.0",
+            .Http30 => "HTTP/3.0",
+        };
+    }
 };
 
 test "HTTP/0.9" {

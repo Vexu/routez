@@ -136,7 +136,7 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
                                         if (number) {
                                             fstate = .Fmt;
                                         } else {
-                                            delim = fmt[fi + 1..];
+                                            delim = fmt[fi + 1 ..];
                                             fstate = .Done;
                                             break;
                                         }
