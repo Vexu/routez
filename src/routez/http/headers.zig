@@ -1,22 +1,107 @@
 const std = @import("std");
 const mem = std.mem;
 const Allocator = mem.Allocator;
-const HashMap = std.HashMap;
+const ArrayList = std.ArrayList;
 
 pub const Headers = struct {
-    map: HeaderMap,
+    list: HeaderList,
+
     pub const Error = error{
         InvalidChar,
         Invalid,
         OutOfMemory,
     };
 
-    const HeaderMap = HashMap([]const u8, []const u8, mem.hash_slice_u8, mem.eql_slice_u8);
+    const HeaderList = ArrayList(Header);
+    const Header = struct {
+        name: []const u8,
+        value: []const u8,
+
+        fn fromVerified(allocator: *Allocator, name: []const u8, value: []const u8) Error!Header {
+            var h = Header{
+                .name = try allocator.alloc(u8, name.len),
+                .value = try allocator.alloc(u8, value.len),
+            };
+            for (name) |c, i| {
+                h.name[i] = switch (c) {
+                    'A'...'Z' => c | 0x20,
+                    else => c,
+                };
+            }
+            mem.copy(u8, h.value, value);
+            return h;
+        }
+
+        fn from(allocator: *Allocator, name: []const u8, value: []const u8) Error!Header {
+            var copy_name = try allocator.alloc(u8, name.len);
+            var copy_value = try allocator.alloc(u8, value.len);
+            errdefer allocator.free(copy_name);
+            errdefer allocator.free(copy_value);
+
+            for (name) |c, i| {
+                copy_name[i] = switch (c) {
+                    'a'...'z', '0'...'9', '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '/', '^', '_', '`', '|', '~' => c,
+                    'A'...'Z' => c | 0x20,
+                    else => return Error.InvalidChar,
+                };
+            }
+            var i: usize = 0;
+            for (value) |c| {
+                switch (c) {
+                    'a'...'z', 'A'...'Z', '0'...'9', '(', ')', '<', '>', '@', ',', ';', ':', '\\', '\"', '/', '[', ']', '?', '=', '{', '}', '-', ' ', '\t' => {
+                        copy_value[i] = c;
+                        i += 1;
+                    },
+                    '\r', '\n' => {},
+                    else => return Error.InvalidChar,
+                }
+            }
+            copy_value = allocator.shrink(copy_value, i);
+            return Header{
+                .name = copy_name,
+                .value = copy_value,
+            };
+        }
+    };
 
     pub fn init(allocator: *Allocator) Headers {
         return Headers{
-            .map = HeaderMap.init(allocator),
+            .list = HeaderList.init(allocator),
         };
+    }
+
+    pub fn deinit(headers: Headers) void {
+        const a = headers.list.allocator;
+        for (headers.list.toSlice()) |h| {
+            a.free(h.name);
+            a.free(h.value);
+        }
+        headers.list.deinit();
+    }
+
+    pub fn get(headers: *const Headers, allocator: *Allocator, name: []const u8) Error!?[]const *Header {
+        var list = ArrayList(*Header).init(allocator);
+        errdefer list.deinit();
+        for (headers.list.toSlice()) |*h| {
+            if (mem.eql(u8, h.name, name)) {
+                const new = try list.addOne();
+                new.* = h;
+            }
+        }
+        if (list.len == 0) {
+            return null;
+        } else {
+            return list.toOwnedSlice();
+        }
+    }
+
+    // pub fn set(h: *Headers, name: []const u8, value: []const u8) Error!?[]const u8 {
+    //     // var old = get()
+    // }
+
+    pub fn put(h: *Headers, name: []const u8, value: []const u8) Error!void {
+        const new = try h.list.addOne();
+        new.* = try Header.from(h.list.allocator, name, value);
     }
 
     pub fn parse(h: *Headers, buffer: []const u8) Error!usize {
@@ -58,19 +143,20 @@ pub const Headers = struct {
                     }
                 },
                 .AfterName => {
-                    if (c == ' ') {
-                        state = .Value;
-                        begin = i + 1;
-                    } else {
-                        return Error.InvalidChar;
+                    switch (c) {
+                        'a'...'z', 'A'...'Z', '0'...'9', '(', ')', '<', '>', '@', ',', ';', ':', '\\', '\"', '/', '[', ']', '?', '=', '{', '}', '-' => {
+                            begin = i;
+                            state = .Value;
+                        },
+                        ' ', '\t' => {},
+                        else => return Error.InvalidChar,
                     }
                 },
                 .Value => {
                     switch (c) {
-                        'a'...'z', 'A'...'Z', '0'...'9', '(', ')', '<', '>', '@', ',', ';', ':', '\\', '\"', '/', '[', ']', '?', '=', '{', '}', ' ', '\t' => {},
+                        'a'...'z', 'A'...'Z', '0'...'9', '(', ')', '<', '>', '@', ',', ';', ':', '\\', '\"', '/', '[', ']', '?', '=', '{', '}', '-', ' ', '\t' => {},
                         '\r' => {
                             state = .Cr;
-                            _ = try h.map.put(name, buffer[begin..i]);
                         },
                         else => return Error.InvalidChar,
                     }
@@ -85,14 +171,15 @@ pub const Headers = struct {
                     switch (c) {
                         ' ', '\t' => {
                             state = .Value;
-                            // begin = i + 1; todo currently includes '\t' or ' ' in header value
                         },
                         '\r' => {
+                            try h.put(name, buffer[begin..i]);
                             state = .Done;
                             break;
                         },
                         'a'...'z', 'A'...'Z', '0'...'9', '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '/', '^', '_', '`', '|', '~' => {
-                            state = .Name;
+                            try h.put(name, buffer[begin..i]);
+                            state = if (c == '\r') State.Done else State.Name;
                             begin = i;
                         },
                         else => return Error.InvalidChar,

@@ -180,6 +180,7 @@ pub const Request = struct {
         }
 
         index += try Headers.parse(&req.headers, buffer[index..]);
+        errdefer req.headers.deinit();
 
         if (buffer[index] != '\r' or buffer[index + 1] != '\n') {
             return Error.InvalidChar;
@@ -189,6 +190,10 @@ pub const Request = struct {
         req.body = buffer[index..];
 
         return req;
+    }
+
+    pub fn deinit(req: Request) void {
+        req.headers.deinit();
     }
 };
 
@@ -238,22 +243,28 @@ pub const Version = enum {
 
 test "HTTP/0.9" {
     const req = try Request.parse(std.debug.global_allocator, "GET / HTTP/0.9\r\n");
+    defer req.deinit();
     assert(req.method == .Get);
     assert(mem.eql(u8, req.path, "/"));
     assert(req.version == .Http09);
 }
 
 test "HTTP/1.1" {
-    const req = try Request.parse(std.debug.global_allocator, "POST /about HTTP/1.1\r\n" ++
+    var a = std.debug.global_allocator;
+    const req = try Request.parse(a, "POST /about HTTP/1.1\r\n" ++
         "expires: Mon, 08 Jul 2019 11:49:03 GMT\r\n" ++
         "last-modified: Fri, 09 Nov 2018 06:15:00 GMT\r\n" ++
+        "X-Test: test\r\n" ++
+        " obs-fold\r\n" ++
         "\r\na body\n");
+    defer req.deinit();
     assert(req.method == .Post);
     assert(mem.eql(u8, req.path, "/about"));
     assert(req.version == .Http11);
     assert(mem.eql(u8, req.body, "a body\n"));
-    assert(mem.eql(u8, req.headers.map.get("expires").?.value, "Mon, 08 Jul 2019 11:49:03 GMT"));
-    assert(mem.eql(u8, req.headers.map.get("last-modified").?.value, "Fri, 09 Nov 2018 06:15:00 GMT"));
+    assert(mem.eql(u8, (try req.headers.get(a, "expires")).?[0].value, "Mon, 08 Jul 2019 11:49:03 GMT"));
+    assert(mem.eql(u8, (try req.headers.get(a, "last-modified")).?[0].value, "Fri, 09 Nov 2018 06:15:00 GMT"));
+    assert(mem.eql(u8, (try req.headers.get(a, "x-test")).?[0].value, "test obs-fold"));
 }
 
 test "HTTP/3.0" {

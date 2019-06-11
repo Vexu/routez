@@ -201,7 +201,7 @@ pub fn static(allocator: *std.mem.Allocator, local_path: []const u8, remote_path
             try res.body.write(content);
 
             const mimetype = if (std.mem.lastIndexOfScalar(u8, args.path, '.')) |i| mime.fromExtension(args.path[i + 1 ..]) else mime.default;
-            _ = try res.headers.map.put("Content-Type", mimetype);
+            _ = try res.headers.put("content-type", mimetype);
             res.status_code = .Ok;
         }
     }.staticHandler;
@@ -340,6 +340,6 @@ test "static files" {
     };
 
     try handler(&req, res);
-    assert(std.mem.eql(u8, res.headers.map.get("Content-Type").?.value, "text/plain;charset=UTF-8"));
+    assert(std.mem.eql(u8, (try res.headers.get(std.debug.global_allocator, "content-type")).?[0].value, "text/plain;charset=UTF-8"));
     assert(std.mem.eql(u8, stream.buf.toSlice(), "Some text\n"));
 }
