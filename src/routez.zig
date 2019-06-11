@@ -30,4 +30,5 @@ pub const version = struct {
 test "routez" {
     _ = @import("routez/http.zig");
     _ = @import("routez/router.zig");
+    _ = @import("routez/server.zig");
 }
