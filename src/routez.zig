@@ -1,13 +1,7 @@
-const h = @import("routez/http.zig");
-pub const http = struct {
-    pub const Headers = h.Headers;
-    pub const Method = h.Method;
-    pub const Request = h.Request;
-    pub const Response = h.Response;
-    pub const Version = h.Version;
-    pub const StatusCode = h.StatusCode;
-};
-pub const Server = h.Server;
+pub use @import("routez/http.zig");
+
+const s = @import("routez/server.zig");
+pub const Server = s.Server;
 
 // Java's package private would be nice
 const r = @import("routez/router.zig");

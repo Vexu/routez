@@ -5,8 +5,9 @@ const TypeInfo = builtin.TypeInfo;
 const TypeId = builtin.TypeId;
 const mime = @import("mime.zig");
 use @import("route/parse.zig");
-
 use @import("http.zig");
+
+pub const HandlerFn = fn handle(Request, Response) anyerror!void;
 
 pub const ErrorHandler = struct {
     handler: fn (Request, Response) void,
@@ -14,7 +15,7 @@ pub const ErrorHandler = struct {
 };
 
 // todo include error handlers and other mixins in routes
-pub fn Router(comptime routes: []Route, comptime err_handlers: ?[]ErrorHandler) Handler {
+pub fn Router(comptime routes: []Route, comptime err_handlers: ?[]ErrorHandler) HandlerFn {
     if (routes.len == 0) {
         @compileError("Router must have at least one route");
     }
@@ -190,7 +191,7 @@ pub fn static(allocator: *std.mem.Allocator, local_path: []const u8, remote_path
             path: []const u8,
         }) !void {
             const path = if (local_path[local_path.len - 1] == '/') local_path else local_path ++ "/";
-            const full_path = try std.os.path.join(allocator, [][]const u8{path, args.path});
+            const full_path = try std.os.path.join(allocator, [][]const u8{ path, args.path });
             defer allocator.free(full_path);
 
             // todo improve
@@ -209,6 +210,10 @@ pub fn static(allocator: *std.mem.Allocator, local_path: []const u8, remote_path
     const path = if (remote_path[remote_path.len - 1] == '/') remote_path ++ "{path;}" else remote_path ++ "/{path;}";
     return createRoute(Method.Get, path, handler);
 }
+
+// for tests
+const request = @import("http/request.zig").Request;
+const response = @import("http/response.zig").Response;
 
 test "index" {
     const handler = comptime Router(&[]Route{get("/", indexHandler)}, null);
@@ -320,7 +325,7 @@ test "static files" {
         std.debug.global_allocator,
         "assets",
         "/static",
-        1024*1024,
+        1024 * 1024,
     )}, null);
 
     var req = request{
