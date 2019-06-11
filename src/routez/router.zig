@@ -3,7 +3,6 @@ const assert = std.debug.assert;
 const builtin = @import("builtin");
 const TypeInfo = builtin.TypeInfo;
 const TypeId = builtin.TypeId;
-const mime = @import("mime.zig");
 use @import("route/parse.zig");
 use @import("http.zig");
 
@@ -185,7 +184,7 @@ pub fn subRoute(allocator: *std.mem.Allocator, route: []const u8, comptime route
     return createRoute(Method.Get, path, handler);
 }
 
-pub fn static(allocator: *std.mem.Allocator, local_path: []const u8, remote_path: []const u8, max_size: usize) Route {
+pub fn static(allocator: *std.mem.Allocator, local_path: []const u8, remote_path: ?[]const u8) Route {
     const handler = struct {
         fn staticHandler(req: Request, res: Response, args: *const struct {
             path: []const u8,
@@ -194,20 +193,12 @@ pub fn static(allocator: *std.mem.Allocator, local_path: []const u8, remote_path
             const full_path = try std.os.path.join(allocator, [][]const u8{ path, args.path });
             defer allocator.free(full_path);
 
-            // todo improve
-            var stream = (try std.os.File.openRead(full_path)).inStream();
-            defer stream.file.close();
-            const content = try stream.stream.readAllAlloc(allocator, max_size);
-            defer allocator.free(content);
-            try res.body.write(content);
-
-            const mimetype = if (std.mem.lastIndexOfScalar(u8, args.path, '.')) |i| mime.fromExtension(args.path[i + 1 ..]) else mime.default;
-            _ = try res.headers.put("content-type", mimetype);
+            try res.sendFile(full_path);
             res.status_code = .Ok;
         }
     }.staticHandler;
 
-    const path = if (remote_path[remote_path.len - 1] == '/') remote_path ++ "{path;}" else remote_path ++ "/{path;}";
+    var path = if (remote_path) |r| if (r[r.len - 1] == '/') r ++ "{path;}" else r ++ "/{path;}" else "/{path;}";
     return createRoute(Method.Get, path, handler);
 }
 
@@ -325,7 +316,6 @@ test "static files" {
         std.debug.global_allocator,
         "assets",
         "/static",
-        1024 * 1024,
     )}, null);
 
     var req = request{
@@ -337,14 +327,13 @@ test "static files" {
         .headers = undefined,
     };
     var res = try std.debug.global_allocator.create(response);
-    var stream = @import("http/response.zig").OutStream.init(std.debug.global_allocator);
     res.* = response{
         .status_code = .Processing,
         .headers = Headers.init(std.debug.global_allocator),
-        .body = &stream.stream,
+        .body = @import("http/response.zig").OutStream.init(std.debug.global_allocator),
     };
 
     try handler(&req, res);
     assert(std.mem.eql(u8, (try res.headers.get(std.debug.global_allocator, "content-type")).?[0].value, "text/plain;charset=UTF-8"));
-    assert(std.mem.eql(u8, stream.buf.toSlice(), "Some text\n"));
+    assert(std.mem.eql(u8, res.body.buf.toSlice(), "Some text\n"));
 }
