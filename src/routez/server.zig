@@ -6,22 +6,11 @@ const TcpServer = std.event.net.Server;
 const Loop = std.event.Loop;
 const Address = std.net.Address;
 const File = std.os.File;
+const net = std.event.net;
 const request = @import("http/request.zig");
 const response = @import("http/response.zig");
 use @import("http.zig");
 use @import("router.zig");
-
-pub const Stream = std.os.File.OutStream.Stream;
-
-pub fn writeResponse(stream: *Stream, version: Version, res: Response) !void {
-    const body = res.body.buf.toSlice();
-    try stream.print("{} {} {}\r\n", version.toString(), @enumToInt(res.status_code), res.status_code.toString());
-    for (res.headers.list.toSlice()) |header| {
-        try stream.print("{}: {}\r\n", header.name, header.value);
-    }
-    try stream.print("content-length: {}\r\n\r\n", body.len);
-    try stream.write(body);
-}
 
 pub const Server = struct {
     server: TcpServer,
@@ -43,23 +32,29 @@ pub const Server = struct {
     }
 
     pub fn listen(server: *Server, address: *Address) !void {
-        errdefer server.close();
+        errdefer server.deinit();
         try server.server.listen(address, handleRequest);
         server.loop.run();
     }
 
     pub fn close(s: *Server) void {
         s.server.close();
+    }
+
+    pub fn deinit(s: *Server) void {
         s.server.deinit();
         s.loop.deinit();
     }
 
     pub async<*Allocator> fn handleRequest(server: *TcpServer, addr: *const std.net.Address, socket: File) void {
         const stream = &socket.outStream().stream;
-        handleHttpRequest(@fieldParentPtr(Server, "server", server), socket) catch return;
+        const handle = async handleHttpRequest(@fieldParentPtr(Server, "server", server), socket) catch return;
+        (await handle) catch |err| {
+            std.debug.warn("unbale to handle connection: {}\n", err);
+        };
     }
 
-    fn handleHttpRequest(server: *Server, socket: File) !void {
+    async fn handleHttpRequest(server: *Server, socket: File) !void {
         var out_stream = response.OutStream.init(server.allocator);
         defer out_stream.buf.deinit();
 
@@ -73,13 +68,12 @@ pub const Server = struct {
             .body = out_stream,
         };
 
-        var socket_in = socket.inStream();
         var buf = try server.allocator.alloc(u8, os.page_size);
         defer server.allocator.free(buf);
-        _ = try socket_in.stream.read(buf);
+        const count = try await (try async net.read(&server.loop, socket.handle, buf));
         var socket_out = socket.outStream();
 
-        if (request.Request.parse(&arena.allocator, buf[0..buf.len])) |req| {
+        if (request.Request.parse(&arena.allocator, buf[0..count])) |req| {
             defer req.deinit();
             server.handler(&req, &res) catch |e| {
                 try defaultErrorHandler(e, &req, &res);
@@ -98,6 +92,19 @@ pub const Server = struct {
         //     else => res.status_code = .BadRequest,
         // }
         return writeResponse(&socket_out.stream, .Http11, &res);
+    }
+
+    const Stream = std.os.File.OutStream.Stream;
+
+    // todo make async
+    fn writeResponse(stream: *Stream, version: Version, res: Response) !void {
+        const body = res.body.buf.toSlice();
+        try stream.print("{} {} {}\r\n", version.toString(), @enumToInt(res.status_code), res.status_code.toString());
+        for (res.headers.list.toSlice()) |header| {
+            try stream.print("{}: {}\r\n", header.name, header.value);
+        }
+        try stream.print("content-length: {}\r\n\r\n", body.len);
+        try stream.write(body);
     }
 
     fn defaultErrorHandler(err: anyerror, req: Request, res: Response) !void {

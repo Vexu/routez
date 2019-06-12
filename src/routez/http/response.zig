@@ -25,7 +25,7 @@ pub const Response = struct {
         defer res.body.buf.allocator.free(content);
         try res.body.stream.write(content);
 
-        var mimetype: []const u8 = mime.html;
+        var mimetype: []const u8 = mime.text;
 
         if (std.mem.lastIndexOfScalar(u8, path, '.')) |i| {
             if (mime.fromExtension(path[i + 1 ..])) |m| mimetype = m;
