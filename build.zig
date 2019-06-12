@@ -10,15 +10,13 @@ pub fn build(b: *Builder) void {
     test_step.dependOn(&tests.step);
     b.default_step.dependOn(test_step);
 
-
-    var basic = b.addExecutable("basic", "examples/basic.zig");
-    basic.setBuildMode(mode);
-    basic.addPackagePath("routez", "src/routez.zig");
-    basic.addPackagePath("zuri", "zuri/src/zuri.zig");
-    basic.setOutputDir("zig-cache");
-
-    b.installArtifact(basic);
-
-    const basic_step = b.step("basic", "Basic example");
-    basic_step.dependOn(&basic.run().step);
+    // use build_example.sh
+    // var basic = b.addExecutable("basic", "examples/basic.zig");
+    // basic.setBuildMode(mode);
+    // basic.addPackagePath("routez", "src/routez.zig");
+    // basic.addPackagePath("zuri", "zuri/src/zuri.zig");
+    // basic.setOutputDir("zig-cache");
+    // b.installArtifact(basic);
+    // const basic_step = b.step("basic", "Basic example");
+    // basic_step.dependOn(&basic.run().step);
 }

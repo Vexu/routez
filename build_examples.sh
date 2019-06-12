@@ -1,0 +1,1 @@
+zig build-exe examples/basic.zig --cache-dir zig-cache --name basic --pkg-begin routez src/routez.zig --pkg-begin zuri zuri/src/zuri.zig --pkg-end --pkg-end --output-dir zig-cache
