@@ -13,8 +13,9 @@ use @import("router.zig");
 
 pub const Stream = std.os.File.OutStream.Stream;
 
-pub fn writeResponse(stream: *Stream, body: []const u8, version: Version, res: Response) !void {
-    try stream.print("{} {} {}\r\n", version.toString(), res.status_code, res.status_code.toString());
+pub fn writeResponse(stream: *Stream, version: Version, res: Response) !void {
+    const body = res.body.buf.toSlice();
+    try stream.print("{} {} {}\r\n", version.toString(), @enumToInt(res.status_code), res.status_code.toString());
     for (res.headers.list.toSlice()) |header| {
         try stream.print("{}: {}\r\n", header.name, header.value);
     }
@@ -33,10 +34,7 @@ pub const Server = struct {
     };
 
     pub fn init(s: *Server, allocator: *Allocator, properties: Properties, comptime routes: []Route, comptime err_handlers: ?[]ErrorHandler) !void {
-        const loop_init = if (properties.multithreaded)
-            Loop.initMultiThreaded
-        else
-            Loop.initSingleThreaded;
+        const loop_init = if (properties.multithreaded) Loop.initMultiThreaded else Loop.initSingleThreaded;
 
         s.handler = Router(routes, err_handlers);
         s.allocator = allocator;
@@ -64,10 +62,13 @@ pub const Server = struct {
     fn handleHttpRequest(server: *Server, socket: File) !void {
         var out_stream = response.OutStream.init(server.allocator);
         defer out_stream.buf.deinit();
+
+        // for use in headers and allocations in handlers
         var arena = ArenaAllocator.init(server.allocator);
         defer arena.deinit();
+
         var res = response.Response{
-            .status_code = .Processing,
+            .status_code = .InternalServerError,
             .headers = Headers.init(&arena.allocator),
             .body = out_stream,
         };
@@ -80,28 +81,28 @@ pub const Server = struct {
 
         if (request.Request.parse(&arena.allocator, buf[0..buf.len])) |req| {
             defer req.deinit();
-            if (server.handler(&req, &res)) {
-                return writeResponse(&socket_out.stream, out_stream.buf.toSlice(), req.version, &res);
-            } else |e| {
+            server.handler(&req, &res) catch |e| {
                 try defaultErrorHandler(e, &req, &res);
-                return writeResponse(&socket_out.stream, out_stream.buf.toSlice(), req.version, &res);
-            }
-        } else |e|
+            };
+            return writeResponse(&socket_out.stream, req.version, &res);
+        } else |e| {
+            std.debug.warn("error parsing: {}\n", e);
+            return e;
+        }
         // TODO: zig: /build/zig/src/zig-0.4.0/src/ir.cpp:21059: IrInstruction*
         //      ir_analyze_instruction_check_switch_prongs(IrAnalyze*, IrInstructionCheckSwitchProngs*):
         //      Assertion `start_value->value.type->id == ZigTypeIdErrorSet' failed.
-            return e;
         // switch (e) {
         //     .InvalidVersion => res.status_code = .HttpVersionNotSupported,
         //     .OutOfMemory => res.status_code = .InternalServerError,
         //     else => res.status_code = .BadRequest,
         // }
-        return writeResponse(&socket_out.stream, out_stream.buf.toSlice(), .Http11, &res);
+        return writeResponse(&socket_out.stream, .Http11, &res);
     }
 
     fn defaultErrorHandler(err: anyerror, req: Request, res: Response) !void {
         res.status_code = .InternalServerError;
         try res.headers.put("content-type", "application/json;charset=UTF-8");
-        try res.body.print("{{\"error\":\"{}\"}}", @errorName(err));
+        try res.print("{{\"error\":\"{}\"}}", @errorName(err));
     }
 };

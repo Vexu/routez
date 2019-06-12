@@ -8,7 +8,14 @@ pub const Response = struct {
     headers: Headers,
     body: OutStream,
 
-    // todo improve
+    /// arena allocator that frees everything when response has been sent
+    pub fn allocator(res: *Response) *std.mem.Allocator {
+        return res.headers.list.allocator;
+    }
+
+    pub fn setType(res: *Response, mimetype: []const u8) !void {}
+
+    // todo improve, cache control
     pub fn sendFile(res: *Response, path: []const u8) !void {
         var out_stream = (try std.os.File.openRead(path)).inStream();
         defer out_stream.file.close();
