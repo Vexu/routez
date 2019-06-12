@@ -3,22 +3,13 @@ pub use @import("routez/http.zig");
 const s = @import("routez/server.zig");
 pub const Server = s.Server;
 
-// Java's package private would be nice
+pub const mime = @import("routez/server.zig");
+
 const r = @import("routez/router.zig");
 pub const ErrorHandler = r.ErrorHandler;
 pub const Route = r.Route;
-pub const all = r.all;
-pub const get = r.get;
-pub const head = r.head;
-pub const post = r.post;
-pub const put = r.put;
-pub const delete = r.delete;
-pub const connect = r.connect;
-pub const options = r.options;
-pub const trace = r.trace;
-pub const patch = r.patch;
-pub const subRoute = r.subRoute;
-pub const static = r.static;
+
+pub use @import("routez/routes.zig");
 
 pub const version = struct {
     pub const major = 0;
@@ -31,4 +22,6 @@ test "routez" {
     _ = @import("routez/http.zig");
     _ = @import("routez/router.zig");
     _ = @import("routez/server.zig");
+    _ = @import("routez/mime.zig");
+    _ = @import("routez/routes.zig");
 }
