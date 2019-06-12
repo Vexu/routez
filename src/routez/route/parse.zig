@@ -9,7 +9,7 @@ const assert = std.debug.assert;
 use @import("../http.zig");
 
 /// returns 1 if request matched route
-pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []const u8, req: Request, res: Response, path_overload: ?[]const u8) (if (Errs != null) Errs.?!void else void) {
+pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []const u8, req: Request, res: Response, path_overload: ?[]const u8) (if (Errs != null) Errs.?!bool else bool) {
     const has_args = @typeInfo(@typeOf(handler)).Fn.args.len == 3;
     const Args = if (has_args) @typeInfo(@typeInfo(@typeOf(handler)).Fn.args[2].arg_type.?).Pointer.child else void;
 
@@ -58,10 +58,10 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
                     } else {
                         optional = false;
                         index -= 1;
-                        const r = pathbuf[begin .. index];
+                        const r = pathbuf[begin..index];
                         begin = index;
                         if (path.len < r.len or !mem.eql(u8, r, path[path_index .. path_index + r.len])) {
-                            return;
+                            return false;
                         }
                         path_index += r.len;
                         if (path.len > path_index and path[path_index] == pathbuf[begin]) {
@@ -87,7 +87,7 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
                     const r = pathbuf[begin..index];
                     begin = index;
                     if (path.len < r.len or !mem.eql(u8, r, path[path_index .. path_index + r.len])) {
-                        return;
+                        return false;
                     }
                     path_index += r.len;
                 },
@@ -202,7 +202,7 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
                     }
                     // route is incorrect if the argument given is zero sized
                     if (len == 0) {
-                        return;
+                        return false;
                     }
                     path_index += len;
 
@@ -224,7 +224,7 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
     };
     const r = pathbuf[begin..index];
     if (!mem.eql(u8, r, path[path_index..])) {
-        return;
+        return false;
     }
 
     if (has_args) {
@@ -240,6 +240,7 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
             handler(req, res);
         }
     }
+    return true;
 }
 
 fn canUse(comptime Args: type, field_name: []const u8, used: []bool) void {

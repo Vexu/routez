@@ -108,15 +108,19 @@ pub fn subRoute(allocator: *std.mem.Allocator, route: []const u8, comptime route
                 // try matching if method is correct or handler accepts all
                 if (method == null or req.method == method.?) {
                     if (err == null) {
-                        return match(@ptrCast(r.handler_type, r.handler), err, r.path, req, res, args.path);
+                        if (match(@ptrCast(r.handler_type, r.handler), err, r.path, req, res, args.path)) {
+                            return;
+                        }
                     } else {
-                        return match(@ptrCast(r.handler_type, r.handler), err, route.path, req, res, args.path) catch |e| {
+                        if (match(@ptrCast(r.handler_type, r.handler), err, route.path, req, res, args.path) catch |e| {
                             if (err_handlers == null) {
                                 return error.Notfound;
                             } else {
                                 return handleError(e, req, res);
                             }
-                        };
+                        }) {
+                            return;
+                        }
                     }
                 }
             }
@@ -138,14 +142,14 @@ pub fn subRoute(allocator: *std.mem.Allocator, route: []const u8, comptime route
     return createRoute(Method.Get, path, handler);
 }
 
-pub fn static(allocator: *std.mem.Allocator, local_path: []const u8, remote_path: ?[]const u8) Route {
+pub fn static(local_path: []const u8, remote_path: ?[]const u8) Route {
     const handler = struct {
         fn staticHandler(req: Request, res: Response, args: *const struct {
             path: []const u8,
         }) !void {
+            const allocator = res.allocator();
             const path = if (local_path[local_path.len - 1] == '/') local_path else local_path ++ "/";
             const full_path = try std.os.path.join(allocator, [][]const u8{ path, args.path });
-            defer allocator.free(full_path);
 
             try res.sendFile(full_path);
             res.status_code = .Ok;
@@ -263,7 +267,6 @@ test "subRoute" {
 
 test "static files" {
     const handler = comptime Router(&[]Route{static(
-        std.debug.global_allocator,
         "assets",
         "/static",
     )}, null);

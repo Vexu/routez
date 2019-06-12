@@ -31,15 +31,19 @@ pub fn Router(comptime routes: []Route, comptime err_handlers: ?[]ErrorHandler) 
                 // try matching if method is correct or handler accepts all
                 if (method == null or req.method == method.?) {
                     if (err == null) {
-                        return match(@ptrCast(route.handler_type, route.handler), err, route.path, req, res, null);
+                        if (match(@ptrCast(route.handler_type, route.handler), err, route.path, req, res, null)) {
+                            return;
+                        }
                     } else {
-                        return match(@ptrCast(route.handler_type, route.handler), err, route.path, req, res, null) catch |e| {
+                        if (match(@ptrCast(route.handler_type, route.handler), err, route.path, req, res, null) catch |e| {
                             if (err_handlers == null) {
                                 return error.Notfound;
                             } else {
                                 return handleError(e, req, res);
                             }
-                        };
+                        }) {
+                            return;
+                        }
                     }
                 }
             }
