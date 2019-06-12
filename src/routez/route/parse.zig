@@ -37,7 +37,7 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
     comptime var fmt_begin = 0;
     // worst-case scenario every byte in route needs to be percentage encoded
     comptime var pathbuf: [route.len * 3]u8 = undefined;
-    // comptime optional = false;
+    comptime var optional = false;
     var path_index: usize = 0;
     var len: usize = undefined;
 
@@ -52,24 +52,36 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
                 else => @compileError("route must begin with a '/'"),
             },
             .Path => switch (c) {
-                // '?' => {
-                //     if (!optional) {
-                //         @compileError("previous character is not optional");
-                //     }
-                // },
+                '?' => {
+                    if (!optional) {
+                        @compileError("previous character is not optional");
+                    } else {
+                        optional = false;
+                        index -= 1;
+                        const r = pathbuf[begin .. index];
+                        begin = index;
+                        if (path.len < r.len or !mem.eql(u8, r, path[path_index .. path_index + r.len])) {
+                            return;
+                        }
+                        path_index += r.len;
+                        if (path.len > path_index and path[path_index] == pathbuf[begin]) {
+                            path_index += 1;
+                        }
+                    }
+                },
                 'a'...'z', 'A'...'Z', '0'...'9', '-', '.', '_', '~', '!', '$', '&', '\'', '(', ')', '*', '+', ',', ';', '=', ':', '@', '%', '/' => comptime {
                     pathbuf[index] = c;
                     index += 1;
                     if (c == '%') {
                         state = .AmperStart;
                     }
-                    // optional = true;
+                    optional = true;
                 },
                 '{' => {
                     if (!has_args) {
                         @compileError("handler does not accept path arugments");
                     }
-                    // optional = false;
+                    optional = false;
                     state = .Format;
                     fmt_begin = i + 1;
                     const r = pathbuf[begin..index];
@@ -85,7 +97,7 @@ pub fn match(comptime handler: var, comptime Errs: ?type, comptime route: []cons
                     pathbuf[index + 1] = hex_digits[(c & 0xF0) >> 4];
                     pathbuf[index + 2] = hex_digits[c & 0x0F];
                     index += 3;
-                    // optional = true;
+                    optional = true;
                 },
             },
             .AmperStart, .AmperFirst => comptime switch (c) {
