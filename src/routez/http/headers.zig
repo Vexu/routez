@@ -1,5 +1,6 @@
 const std = @import("std");
 const mem = std.mem;
+const assert = std.debug.assert;
 const Allocator = mem.Allocator;
 const ArrayList = std.ArrayList;
 
@@ -19,7 +20,7 @@ pub const Headers = struct {
 
         fn fromVerified(name: []u8, value: []u8) Error!Header {
             var i: usize = 0;
-            while (i < name.len) : (i+=1) {
+            while (i < name.len) : (i += 1) {
                 switch (name[i]) {
                     'A'...'Z' => name[i] = (name[i] | 0x20),
                     else => {},
@@ -28,18 +29,16 @@ pub const Headers = struct {
 
             i = 0;
             var offset: usize = 0;
-            while (i < value.len - offset) : (i+=1) {
-                switch (value[i]) {
-                    '\r' => offset += 2,
-                    else => {
-                        value[i] = value[i + offset];
-                    },
+            while (i < value.len - offset) : (i += 1) {
+                if (value[i] == '\r') {
+                    offset += 2;
                 }
+                value[i] = value[i + offset];
             }
-            
+
             return Header{
                 .name = name,
-                .value = value,
+                .value = value[0 .. value.len - offset],
             };
         }
 
@@ -133,16 +132,16 @@ pub const Headers = struct {
         };
 
         var state = State.Start;
-        var begin: usize = 0;
+        var begin: usize = i.*;
         var name: []u8 = "";
         var header: *Header = undefined;
         while (true) : (i.* += 1) {
-            if (i.* >= count.*) {
+            if (i.* > count.*) {
                 if (count.* < buffer.len) {
                     // message ended, error if state is incorrect
                     if (state == .AfterCr) {
                         header = try h.list.addOne();
-                        header.* = try Header.fromVerified(name, buffer[begin..i.*]);
+                        header.* = try Header.fromVerified(name, buffer[begin .. i.* - 2]);
 
                         done.* = true;
                         suspend;
@@ -150,7 +149,7 @@ pub const Headers = struct {
                 }
                 suspend;
             }
-            
+
             const c = buffer[i.*];
             switch (state) {
                 .Start => {
@@ -201,7 +200,7 @@ pub const Headers = struct {
                         },
                         'a'...'z', 'A'...'Z', '0'...'9', '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '/', '^', '_', '`', '|', '~', '\r' => {
                             header = try h.list.addOne();
-                            header.* = try Header.fromVerified(name, buffer[begin..i.*]);
+                            header.* = try Header.fromVerified(name, buffer[begin .. i.* - 2]);
 
                             if (c == '\r') {
                                 done.* = true;
@@ -219,14 +218,46 @@ pub const Headers = struct {
     }
 };
 
-// test "Headers.parse" {
-//     var h = Headers.init(std.debug.global_allocator);
-//     defer h.deinit();
-//     _ = try h.parse("User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:67.0) Gecko/20100101 Firefox/67.0\r\n" ++
-//         "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n" ++
-//         "Accept-Language: en-US,en;q=0.5\r\n" ++
-//         "Accept-Encoding: gzip, deflate\r\n" ++
-//         "DNT: 1\r\n" ++
-//         "Connection: keep-alive\r\n" ++
-//         "Upgrade-Insecure-Requests: 1\r\n\r\n");
-// }
+test "parse" {
+    var h = try async<std.debug.global_allocator> parseTest();
+    resume h;
+    cancel h;
+}
+
+async fn parseTest() !void {
+    suspend;
+    const str = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:67.0) Gecko/20100101 Firefox/67.0\r\n" ++
+        "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n" ++
+        "Accept-Language: en-US,en;q=0.5\r\n" ++
+        "Accept-Encoding: gzip, deflate\r\n" ++
+        "DNT: 1\r\n" ++
+        "Connection: keep-alive\r\n" ++
+        "Upgrade-Insecure-Requests: 1\r\n\r\n";
+
+    const buf = try std.debug.global_allocator.alloc(u8, str.len);
+    defer std.debug.global_allocator.free(buf);
+    mem.copy(u8, buf, str);
+
+    var h = Headers.init(std.debug.global_allocator);
+    defer h.deinit();
+    var i: usize = 0;
+    var count: usize = str.len;
+    var done = false;
+    _ = try await (try async h.parse(buf, &i, &count, &done));
+
+    var slice = h.list.toSlice();
+    assert(mem.eql(u8, slice[0].name, "user-agent"));
+    assert(mem.eql(u8, slice[0].value, "Mozilla/5.0 (X11; Linux x86_64; rv:67.0) Gecko/20100101 Firefox/67.0"));
+    assert(mem.eql(u8, slice[0].name, "accept"));
+    assert(mem.eql(u8, slice[1].value, "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"));
+    assert(mem.eql(u8, slice[0].name, "accept-language"));
+    assert(mem.eql(u8, slice[2].value, "en-US,en;q=0.5"));
+    assert(mem.eql(u8, slice[0].name, "accept-encoding"));
+    assert(mem.eql(u8, slice[3].value, "gzip, deflate"));
+    assert(mem.eql(u8, slice[0].name, "dnt"));
+    assert(mem.eql(u8, slice[4].value, "1"));
+    assert(mem.eql(u8, slice[0].name, "connection"));
+    assert(mem.eql(u8, slice[5].value, "keep-alive"));
+    assert(mem.eql(u8, slice[0].name, "upgrade-Insecure-Requests"));
+    assert(mem.eql(u8, slice[6].value, "1"));
+}

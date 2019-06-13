@@ -45,7 +45,6 @@ pub const Request = struct {
             Cr,
             Lf,
             Headers,
-            EmptyLine,
             Body,
         };
 
@@ -62,18 +61,18 @@ pub const Request = struct {
         var headers_done = false;
 
         while (true) : (i += 1) {
-            if (i >= count) {
+            if (i > count) {
                 if (count != 0 and count < buffer.len) {
                     // message has been read in its entirety
-                    if (state != .Body) {
+                    if (state != .Body and state != .Headers and !headers_done) {
                         // message did not end properly
                         return Error.TooShort; // todo this is incorrectly being returned
                     }
                     req.buf = allocator.realloc(buffer, i) catch buffer[0..i];
-                    req.body = buffer[begin..i];
+                    req.body = buffer[begin .. i - 1];
                     return req;
                 }
-                count += await (try async stream.read(buffer[i..])) catch {
+                count += await (try async stream.read(buffer[i - 1 ..])) catch {
                     // todo probably incorrect way to handle this
                     return Error.OutOfMemory;
                 };
@@ -90,16 +89,18 @@ pub const Request = struct {
                             return Error.InvalidMethod;
                         }
                         req.method = buffer[0..i];
-                        begin = i;
+                        begin = i + 1;
                         state = .Path;
                     }
                 },
                 .Path => {
                     if (buffer[i] == ' ') {
                         const uri = try Uri.parse(buffer[begin..i], true);
+                        req.path = uri.path;
+                        req.query = uri.query;
                         state = .Version;
                         begin = i + 1;
-                    } else if (buffer[i] == '*') {
+                    } else if (buffer[begin] == '*') {
                         req.path = buffer[i .. i + 1];
                         state = .AfterPath;
                     }
@@ -158,13 +159,13 @@ pub const Request = struct {
                     // this is probably correct?
                     if (headers_done) {
                         cancel header_handle.?;
-                        if (i == count) {
-                            // HTTP/0.9 doesn't require empty line if there is no body
-                            req.buf = allocator.realloc(buffer, i) catch buffer[0..i];
-                            return req;
+
+                        if (buffer[i] == '\n') {
+                            begin = i + 1;
+                            state = .Body;
+                        } else {
+                            return Error.Invalid;
                         }
-                        // buffer[i] must be '\r' because Headers.parse would have failed otherwise
-                        state = .EmptyLine;
                     }
                     if (header_handle) |h| {
                         resume h;
@@ -173,12 +174,6 @@ pub const Request = struct {
                         header_handle = try async req.headers.parse(buffer, &i, &count, &headers_done);
                         errdefer cancel header_handle;
                     }
-                },
-                .EmptyLine => {
-                    if (buffer[i] != '\n') {
-                        return Error.Invalid;
-                    }
-                    state = .Body;
                 },
                 else => unreachable,
             }
@@ -191,7 +186,6 @@ pub const Request = struct {
     }
 };
 
-// todo how do you test async functions?
 pub const TestStream = struct {
     buf: []const u8,
     stream: S,
@@ -227,7 +221,6 @@ async fn http09() !void {
     assert(mem.eql(u8, req.method, Method.Get));
     assert(mem.eql(u8, req.path, "/"));
     assert(req.version == .Http09);
-    std.debug.warn("http09 done\n");
 }
 
 test "HTTP/1.1" {
@@ -253,8 +246,8 @@ async fn http11() !void {
     assert(mem.eql(u8, req.body, "a body\n"));
     assert(mem.eql(u8, (try req.headers.get(a, "expires")).?[0].value, "Mon, 08 Jul 2019 11:49:03 GMT"));
     assert(mem.eql(u8, (try req.headers.get(a, "last-modified")).?[0].value, "Fri, 09 Nov 2018 06:15:00 GMT"));
+    const val = try req.headers.get(a, "x-test");
     assert(mem.eql(u8, (try req.headers.get(a, "x-test")).?[0].value, "test obs-fold"));
-    std.debug.warn("http11 done\n");
 }
 
 test "HTTP/3.0" {
@@ -267,9 +260,8 @@ async fn http30() !void {
     suspend;
     var a = std.debug.global_allocator;
     var stream = TestStream.init("POST /about HTTP/3.0\r\n\r\n");
-    const req = await (try async<a> Request.parse(a, &stream.stream)) catch |e| {
+    _ = await (try async<a> Request.parse(a, &stream.stream)) catch |e| {
         assert(e == Request.Error.UnsupportedVersion);
-        std.debug.warn("http30 done\n");
         return;
     };
 }

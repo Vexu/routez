@@ -33,6 +33,8 @@ pub const Server = struct {
 
     pub fn listen(server: *Server, address: *Address) !void {
         errdefer server.deinit();
+        errdefer server.loop.deinit();
+        // todo error AddressInUse
         try server.server.listen(address, handleRequest);
         server.loop.run();
     }
@@ -67,11 +69,11 @@ pub const Server = struct {
             .headers = Headers.init(&arena.allocator),
             .body = out_stream,
         };
-        
+
         var socket_in = net.InStream.init(&server.loop, socket.handle);
         var socket_out = socket.outStream();
 
-        if (await (try async request.Request.parse(&arena.allocator, &socket_in.stream)))|req| {
+        if (await (try async request.Request.parse(&arena.allocator, &socket_in.stream))) |req| {
             defer req.deinit();
             server.handler(&req, &res) catch |e| {
                 try defaultErrorHandler(e, &req, &res);
