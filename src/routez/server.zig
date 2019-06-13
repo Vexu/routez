@@ -50,7 +50,7 @@ pub const Server = struct {
         const stream = &socket.outStream().stream;
         const handle = async handleHttpRequest(@fieldParentPtr(Server, "server", server), socket) catch return;
         (await handle) catch |err| {
-            std.debug.warn("unbale to handle connection: {}\n", err);
+            std.debug.warn("unable to handle connection: {}\n", err);
         };
     }
 
@@ -67,13 +67,11 @@ pub const Server = struct {
             .headers = Headers.init(&arena.allocator),
             .body = out_stream,
         };
-
-        var buf = try server.allocator.alloc(u8, os.page_size);
-        defer server.allocator.free(buf);
-        const count = try await (try async net.read(&server.loop, socket.handle, buf));
+        
+        var socket_in = net.InStream.init(&server.loop, socket.handle);
         var socket_out = socket.outStream();
 
-        if (request.Request.parse(&arena.allocator, buf[0..count])) |req| {
+        if (await (try async request.Request.parse(&arena.allocator, &socket_in.stream)))|req| {
             defer req.deinit();
             server.handler(&req, &res) catch |e| {
                 try defaultErrorHandler(e, &req, &res);

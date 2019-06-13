@@ -2,12 +2,14 @@ const std = @import("std");
 const mem = std.mem;
 const Allocator = mem.Allocator;
 const assert = std.debug.assert;
+const Stream = std.event.net.InStream.Stream;
 use @import("headers.zig");
 use @import("common.zig");
 use @import("zuri");
 
 pub const Request = struct {
-    method: Method,
+    buf: []u8,
+    method: []const u8,
     headers: Headers,
     path: []const u8,
     query: []const u8,
@@ -20,213 +22,254 @@ pub const Request = struct {
         InvalidPath,
         InvalidVersion,
         UnsupportedVersion,
+        Invalid,
     } || Uri.Error || Headers.Error;
 
     //todo use instream?
-    pub fn parse(allocator: *Allocator, buffer: []const u8) Error!Request {
-        if (buffer.len < 15) {
-            return Error.TooShort;
-        }
+    pub async fn parse(allocator: *Allocator, stream: *Stream) Error!Request {
         var req = Request{
+            .buf = undefined,
             .method = undefined,
             .headers = Headers.init(allocator),
             .path = undefined,
             .query = "",
             .body = "",
-            .version = undefined,
+            .version = .Http11,
         };
-        var index: usize = 0;
 
-        switch (buffer[0]) {
-            'G' => {
-                index += 3;
-                if (!mem.eql(u8, buffer[0..index], "GET")) {
-                    return Error.InvalidMethod;
-                }
-                req.method = .Get;
-            },
-            'H' => {
-                index += 4;
-                if (!mem.eql(u8, buffer[0..index], "HEAD")) {
-                    return Error.InvalidMethod;
-                }
-                req.method = .Head;
-            },
-            'P' => {
-                switch (buffer[1]) {
-                    'A' => {
-                        index += 5;
-                        if (!mem.eql(u8, buffer[0..index], "PATCH")) {
-                            return Error.InvalidMethod;
-                        }
-                        req.method = .Patch;
-                    },
-                    'O' => {
-                        index += 4;
-                        if (!mem.eql(u8, buffer[0..index], "POST")) {
-                            return Error.InvalidMethod;
-                        }
-                        req.method = .Post;
-                    },
-                    'U' => {
-                        index += 3;
-                        if (!mem.eql(u8, buffer[0..index], "PUT")) {
-                            return Error.InvalidMethod;
-                        }
-                        req.method = .Put;
-                    },
-                    else => return Error.InvalidMethod,
-                }
-            },
-            'D' => {
-                index += 6;
-                if (!mem.eql(u8, buffer[0..index], "DELETE")) {
-                    return Error.InvalidMethod;
-                }
-                req.method = .Delete;
-            },
-            'C' => {
-                index += 7;
-                if (!mem.eql(u8, buffer[0..index], "CONNECT")) {
-                    return Error.InvalidMethod;
-                }
-                req.method = .Connect;
-            },
-            'O' => {
-                index += 7;
-                if (!mem.eql(u8, buffer[0..index], "OPTIONS")) {
-                    return Error.InvalidMethod;
-                }
-                req.method = .Options;
-            },
-            'T' => {
-                index += 5;
-                if (!mem.eql(u8, buffer[0..index], "TRACE")) {
-                    return Error.InvalidMethod;
-                }
-                req.method = .Trace;
-            },
-            else => return Error.InvalidMethod,
-        }
-        if (buffer[index] != ' ') {
-            return Error.InvalidChar;
-        }
-        index += 1;
+        const State = enum {
+            Method,
+            Path,
+            AfterPath,
+            Version,
+            Cr,
+            Lf,
+            Headers,
+            EmptyLine,
+            Body,
+        };
 
-        const uri = try Uri.parse(buffer[index..]);
-        if (uri.path[0] != '/') {
-            return Error.InvalidPath;
-        }
-        req.path = uri.path;
-        req.query = uri.query;
-        index += uri.len;
+        // initial buffer size is 512 bytes wich should fit most bodyless requests
+        var buffer = try allocator.alloc(u8, 512);
+        errdefer allocator.free(buffer);
+        var count: usize = 0;
 
-        if (buffer[index..].len < 11) {
-            return Error.TooShort;
-        }
+        var state = State.Method;
+        var i: usize = 0;
+        var begin: usize = 0;
 
-        if (buffer[index] != ' ') {
-            return Error.InvalidChar;
-        }
-        index += 1;
+        var header_handle: ?promise = null;
+        var headers_done = false;
 
-        if (!mem.eql(u8, buffer[index .. index + 5], "HTTP/")) {
-            return Error.InvalidChar;
-        }
-        index += 5;
-
-        // todo index + 1 must be '.'
-        switch (buffer[index]) {
-            '0' => {
-                if (buffer[index + 2] == '9') {
-                    req.version = .Http09;
-                } else {
-                    return Error.InvalidVersion;
+        while (true) : (i += 1) {
+            if (i >= count) {
+                if (count != 0 and count < buffer.len) {
+                    // message has been read in its entirety
+                    if (state != .Body) {
+                        // message did not end properly
+                        return Error.TooShort; // todo this is incorrectly being returned
+                    }
+                    req.buf = allocator.realloc(buffer, i) catch buffer[0..i];
+                    req.body = buffer[begin..i];
+                    return req;
                 }
-            },
-            '1' => {
-                if (buffer[index + 2] == '0') {
-                    req.version = .Http10;
-                } else if (buffer[index + 2] == '1') {
-                    req.version = .Http11;
-                } else {
-                    return Error.InvalidVersion;
-                }
-            },
-            '2' => {
-                return Error.UnsupportedVersion;
-                // if (buffer[index + 2] == '0') {
-                //     req.version = .Http20;
-                // } else {
-                //     return Error.InvalidVersion;
-                // }
-            },
-            '3' => return Error.UnsupportedVersion,
-            else => return Error.InvalidVersion,
-        }
-        index += 3;
-
-        if (buffer[index] != '\r' or buffer[index + 1] != '\n') {
-            return Error.InvalidChar;
-        }
-
-        index += 2;
-
-        if (req.version != .Http09) {
-            if (buffer[index..].len < 2) {
-                return Error.TooShort;
+                count += await (try async stream.read(buffer[i..])) catch {
+                    // todo probably incorrect way to handle this
+                    return Error.OutOfMemory;
+                };
             }
-        } else if (buffer[index..].len == 0) {
-            return req;
+            if (state == .Body) {
+                continue;
+            }
+
+            switch (state) {
+                .Method => {
+                    // todo should probably validate given chars
+                    if (buffer[i] == ' ') {
+                        if (i == 0) {
+                            return Error.InvalidMethod;
+                        }
+                        req.method = buffer[0..i];
+                        begin = i;
+                        state = .Path;
+                    }
+                },
+                .Path => {
+                    if (buffer[i] == ' ') {
+                        const uri = try Uri.parse(buffer[begin..i], true);
+                        state = .Version;
+                        begin = i + 1;
+                    } else if (buffer[i] == '*') {
+                        req.path = buffer[i .. i + 1];
+                        state = .AfterPath;
+                    }
+                },
+                .AfterPath => {
+                    if (buffer[i] != ' ') {
+                        return Error.InvalidChar;
+                    }
+                    state = .Version;
+                    begin = i + 1;
+                },
+                .Version => {
+                    // 8 for HTTP/X.X
+                    if (i - begin < 7) {
+                        continue;
+                    }
+                    if (!mem.eql(u8, buffer[begin .. begin + 5], "HTTP/") or buffer[begin + 6] != '.') {
+                        return Error.InvalidVersion;
+                    }
+                    switch (buffer[begin + 5]) {
+                        '0' => req.version = .Http09,
+                        '1' => req.version = .Http10,
+                        '2' => req.version = .Http20,
+                        '3' => req.version = .Http30,
+                        else => return Error.InvalidVersion,
+                    }
+                    switch (buffer[begin + 7]) {
+                        '9' => if (req.version != .Http09) return Error.InvalidVersion,
+                        '1' => if (req.version == .Http10) {
+                            req.version = .Http11;
+                        } else return Error.InvalidVersion,
+                        '0' => {
+                            if (req.version != .Http10 // or req.version != .Http20) {
+                            ) {
+                                //if (req.version != .Http20 and req.version != .Http30) return Error.InvalidVersion,
+                                return Error.UnsupportedVersion;
+                            }
+                        },
+                        else => return Error.InvalidVersion,
+                    }
+                    state = .Cr;
+                },
+                .Cr => {
+                    if (buffer[i] != '\r') {
+                        return Error.Invalid;
+                    }
+                    state = .Lf;
+                },
+                .Lf => {
+                    if (buffer[i] != '\n') {
+                        return Error.Invalid;
+                    }
+                    state = .Headers;
+                },
+                .Headers => {
+                    // this is probably correct?
+                    if (headers_done) {
+                        cancel header_handle.?;
+                        if (i == count) {
+                            // HTTP/0.9 doesn't require empty line if there is no body
+                            req.buf = allocator.realloc(buffer, i) catch buffer[0..i];
+                            return req;
+                        }
+                        // buffer[i] must be '\r' because Headers.parse would have failed otherwise
+                        state = .EmptyLine;
+                    }
+                    if (header_handle) |h| {
+                        resume h;
+                    } else {
+                        errdefer req.headers.deinit();
+                        header_handle = try async req.headers.parse(buffer, &i, &count, &headers_done);
+                        errdefer cancel header_handle;
+                    }
+                },
+                .EmptyLine => {
+                    if (buffer[i] != '\n') {
+                        return Error.Invalid;
+                    }
+                    state = .Body;
+                },
+                else => unreachable,
+            }
         }
-
-        index += try Headers.parse(&req.headers, buffer[index..]);
-        errdefer req.headers.deinit();
-
-        if (buffer[index] != '\r' or buffer[index + 1] != '\n') {
-            return Error.InvalidChar;
-        }
-        index += 2;
-
-        req.body = buffer[index..];
-
-        return req;
     }
 
     pub fn deinit(req: Request) void {
+        req.headers.list.allocator.free(req.buf);
         req.headers.deinit();
     }
 };
 
+// todo how do you test async functions?
+pub const TestStream = struct {
+    buf: []const u8,
+    stream: S,
+
+    pub const Error = std.event.net.ReadError;
+    pub const S = std.event.io.InStream(Error);
+
+    pub fn init(buf: []const u8) TestStream {
+        return TestStream{
+            .buf = buf,
+            .stream = S{ .readFn = readFn },
+        };
+    }
+
+    async<*mem.Allocator> fn readFn(in_stream: *S, bytes: []u8) Error!usize {
+        const buf = @fieldParentPtr(TestStream, "stream", in_stream).buf;
+        mem.copy(u8, bytes, buf);
+        return buf.len;
+    }
+};
+
 test "HTTP/0.9" {
-    const req = try Request.parse(std.debug.global_allocator, "GET / HTTP/0.9\r\n");
+    var h = try async<std.debug.global_allocator> http09();
+    resume h;
+    cancel h;
+}
+
+async fn http09() !void {
+    suspend;
+    var stream = TestStream.init("GET / HTTP/0.9\r\n");
+    const req = try await (try async Request.parse(std.debug.global_allocator, &stream.stream));
     defer req.deinit();
-    assert(req.method == .Get);
+    assert(mem.eql(u8, req.method, Method.Get));
     assert(mem.eql(u8, req.path, "/"));
     assert(req.version == .Http09);
+    std.debug.warn("http09 done\n");
 }
 
 test "HTTP/1.1" {
+    var h = try async<std.debug.global_allocator> http11();
+    resume h;
+    cancel h;
+}
+
+async fn http11() !void {
+    suspend;
     var a = std.debug.global_allocator;
-    const req = try Request.parse(a, "POST /about HTTP/1.1\r\n" ++
+    var stream = TestStream.init("POST /about HTTP/1.1\r\n" ++
         "expires: Mon, 08 Jul 2019 11:49:03 GMT\r\n" ++
         "last-modified: Fri, 09 Nov 2018 06:15:00 GMT\r\n" ++
         "X-Test: test\r\n" ++
         " obs-fold\r\n" ++
         "\r\na body\n");
+    const req = try await (try async Request.parse(a, &stream.stream));
     defer req.deinit();
-    assert(req.method == .Post);
+    assert(mem.eql(u8, req.method, Method.Post));
     assert(mem.eql(u8, req.path, "/about"));
     assert(req.version == .Http11);
     assert(mem.eql(u8, req.body, "a body\n"));
     assert(mem.eql(u8, (try req.headers.get(a, "expires")).?[0].value, "Mon, 08 Jul 2019 11:49:03 GMT"));
     assert(mem.eql(u8, (try req.headers.get(a, "last-modified")).?[0].value, "Fri, 09 Nov 2018 06:15:00 GMT"));
     assert(mem.eql(u8, (try req.headers.get(a, "x-test")).?[0].value, "test obs-fold"));
+    std.debug.warn("http11 done\n");
 }
 
 test "HTTP/3.0" {
-    _ = Request.parse(std.debug.global_allocator, "POST /about HTTP/3.0\r\n\r\n") catch |e| {
+    var h = try async<std.debug.global_allocator> http30();
+    resume h;
+    cancel h;
+}
+
+async fn http30() !void {
+    suspend;
+    var a = std.debug.global_allocator;
+    var stream = TestStream.init("POST /about HTTP/3.0\r\n\r\n");
+    const req = await (try async<a> Request.parse(a, &stream.stream)) catch |e| {
         assert(e == Request.Error.UnsupportedVersion);
+        std.debug.warn("http30 done\n");
         return;
     };
 }

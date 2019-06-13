@@ -8,7 +8,7 @@ pub const Headers = struct {
 
     pub const Error = error{
         InvalidChar,
-        Invalid,
+        InvalidHeader,
         OutOfMemory,
     };
 
@@ -17,32 +17,29 @@ pub const Headers = struct {
         name: []const u8,
         value: []const u8,
 
-        fn fromVerified(allocator: *Allocator, name: []const u8, value: []const u8) Error!Header {
-            var copy_name = try allocator.alloc(u8, name.len);
-            var copy_value = try allocator.alloc(u8, value.len);
-            errdefer allocator.free(copy_name);
-            errdefer allocator.free(copy_value);
-
-            for (name) |c, i| {
-                copy_name[i] = switch (c) {
-                    'A'...'Z' => c | 0x20,
-                    else => c,
-                };
-            }
+        fn fromVerified(name: []u8, value: []u8) Error!Header {
             var i: usize = 0;
-            for (value) |c| {
-                switch (c) {
-                    '\r', '\n' => {},
+            while (i < name.len) : (i+=1) {
+                switch (name[i]) {
+                    'A'...'Z' => name[i] = (name[i] | 0x20),
+                    else => {},
+                }
+            }
+
+            i = 0;
+            var offset: usize = 0;
+            while (i < value.len - offset) : (i+=1) {
+                switch (value[i]) {
+                    '\r' => offset += 2,
                     else => {
-                        copy_value[i] = c;
-                        i += 1;
+                        value[i] = value[i + offset];
                     },
                 }
             }
-            copy_value = allocator.shrink(copy_value, i);
+            
             return Header{
-                .name = copy_name,
-                .value = copy_value,
+                .name = name,
+                .value = value,
             };
         }
 
@@ -111,17 +108,21 @@ pub const Headers = struct {
     //     // var old = get()
     // }
 
+    pub fn has(h: *Headers, name: []const u8) bool {
+        for (headers.list.toSlice()) |*h| {
+            if (mem.eql(u8, h.name, name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     pub fn put(h: *Headers, name: []const u8, value: []const u8) Error!void {
         const new = try h.list.addOne();
         new.* = try Header.from(h.list.allocator, name, value);
     }
 
-    fn putVerified(h: *Headers, name: []const u8, value: []const u8) Error!void {
-        const new = try h.list.addOne();
-        new.* = try Header.fromVerified(h.list.allocator, name, value);
-    }
-
-    pub fn parse(h: *Headers, buffer: []const u8) Error!usize {
+    pub async fn parse(h: *Headers, buffer: []u8, i: *usize, count: *usize, done: *bool) Error!void {
         const State = enum {
             Start,
             Name,
@@ -129,22 +130,35 @@ pub const Headers = struct {
             Value,
             Cr,
             AfterCr,
-            Done,
         };
 
         var state = State.Start;
-        var i: usize = 0;
         var begin: usize = 0;
-        var name: []const u8 = "";
-        while (i < buffer.len) : (i += 1) {
-            const c = buffer[i];
+        var name: []u8 = "";
+        var header: *Header = undefined;
+        while (true) : (i.* += 1) {
+            if (i.* >= count.*) {
+                if (count.* < buffer.len) {
+                    // message ended, error if state is incorrect
+                    if (state == .AfterCr) {
+                        header = try h.list.addOne();
+                        header.* = try Header.fromVerified(name, buffer[begin..i.*]);
+
+                        done.* = true;
+                        suspend;
+                    } else return Error.InvalidHeader;
+                }
+                suspend;
+            }
+            
+            const c = buffer[i.*];
             switch (state) {
                 .Start => {
                     switch (c) {
                         'a'...'z', 'A'...'Z', '0'...'9', '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '/', '^', '_', '`', '|', '~' => state = .Name,
                         '\r' => {
-                            state = .Done;
-                            break;
+                            done.* = true;
+                            suspend;
                         },
                         else => return Error.InvalidChar,
                     }
@@ -154,7 +168,7 @@ pub const Headers = struct {
                         'a'...'z', 'A'...'Z', '0'...'9', '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '/', '^', '_', '`', '|', '~' => {},
                         ':' => {
                             state = .AfterName;
-                            name = buffer[begin..i];
+                            name = buffer[begin..i.*];
                         },
                         else => return Error.InvalidChar,
                     }
@@ -163,7 +177,7 @@ pub const Headers = struct {
                     if (c < ' ' or c > '~') {
                         return Error.InvalidChar;
                     } else if (c != ' ' and c != '\t') {
-                        begin = i;
+                        begin = i.*;
                         state = .Value;
                     }
                 },
@@ -185,39 +199,34 @@ pub const Headers = struct {
                         ' ', '\t' => {
                             state = .Value;
                         },
-                        '\r' => {
-                            try h.putVerified(name, buffer[begin..i]);
-                            state = .Done;
-                            break;
-                        },
-                        'a'...'z', 'A'...'Z', '0'...'9', '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '/', '^', '_', '`', '|', '~' => {
-                            try h.putVerified(name, buffer[begin..i]);
-                            state = if (c == '\r') State.Done else State.Name;
-                            begin = i;
+                        'a'...'z', 'A'...'Z', '0'...'9', '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '/', '^', '_', '`', '|', '~', '\r' => {
+                            header = try h.list.addOne();
+                            header.* = try Header.fromVerified(name, buffer[begin..i.*]);
+
+                            if (c == '\r') {
+                                done.* = true;
+                                suspend;
+                            }
+                            state = State.Name;
+                            begin = i.*;
                         },
                         else => return Error.InvalidChar,
                     }
                 },
-                .Done => unreachable,
             }
         }
-
-        if (state != .Done) {
-            return Error.Invalid;
-        }
-
-        return i;
+        unreachable;
     }
 };
 
-test "Headers.parse" {
-    var h = Headers.init(std.debug.global_allocator);
-    defer h.deinit();
-    _ = try h.parse("User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:67.0) Gecko/20100101 Firefox/67.0\r\n" ++
-        "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n" ++
-        "Accept-Language: en-US,en;q=0.5\r\n" ++
-        "Accept-Encoding: gzip, deflate\r\n" ++
-        "DNT: 1\r\n" ++
-        "Connection: keep-alive\r\n" ++
-        "Upgrade-Insecure-Requests: 1\r\n\r\n");
-}
+// test "Headers.parse" {
+//     var h = Headers.init(std.debug.global_allocator);
+//     defer h.deinit();
+//     _ = try h.parse("User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:67.0) Gecko/20100101 Firefox/67.0\r\n" ++
+//         "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n" ++
+//         "Accept-Language: en-US,en;q=0.5\r\n" ++
+//         "Accept-Encoding: gzip, deflate\r\n" ++
+//         "DNT: 1\r\n" ++
+//         "Connection: keep-alive\r\n" ++
+//         "Upgrade-Insecure-Requests: 1\r\n\r\n");
+// }
