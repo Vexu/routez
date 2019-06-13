@@ -1,9 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const builtin = @import("builtin");
-const TypeInfo = builtin.TypeInfo;
 const TypeId = builtin.TypeId;
-use @import("route/parse.zig");
 use @import("http.zig");
 use @import("router.zig");
 
@@ -47,8 +45,12 @@ pub fn patch(path: []const u8, handler: var) Route {
     return createRoute(Method.Patch, path, handler);
 }
 
+pub fn custom(method: []const u8, path: []const u8, handler: var) Route {
+    return createRoute(method, path, handler);
+}
+
 /// add route with given method
-fn createRoute(method: ?Method, path: []const u8, handler: var) Route {
+fn createRoute(method: ?[]const u8, path: []const u8, handler: var) Route {
     const t = @typeInfo(@typeOf(handler));
     if (t != builtin.TypeId.Fn) {
         @compileError("handler must be a function");
@@ -105,22 +107,20 @@ pub fn subRoute(allocator: *std.mem.Allocator, route: []const u8, comptime route
                 };
                 var method = r.method;
 
-                // try matching if method is correct or handler accepts all
-                if (method == null or req.method == method.?) {
-                    if (err == null) {
-                        if (match(@ptrCast(r.handler_type, r.handler), err, r.path, req, res, args.path)) {
-                            return;
+                // try matching path to route
+                if (err == null) {
+                    if (match(r, err, req, res, args.path)) {
+                        return;
+                    }
+                } else {
+                    if (match(r, err, req, res, args.path) catch |e| {
+                        if (err_handlers == null) {
+                            return error.Notfound;
+                        } else {
+                            return handleError(e, req, res);
                         }
-                    } else {
-                        if (match(@ptrCast(r.handler_type, r.handler), err, route.path, req, res, args.path) catch |e| {
-                            if (err_handlers == null) {
-                                return error.Notfound;
-                            } else {
-                                return handleError(e, req, res);
-                            }
-                        }) {
-                            return;
-                        }
+                    }) {
+                        return;
                     }
                 }
             }
@@ -160,6 +160,7 @@ pub fn static(local_path: []const u8, remote_path: ?[]const u8) Route {
     return createRoute(Method.Get, path, handler);
 }
 
+
 // for tests
 const request = @import("http/request.zig").Request;
 const response = @import("http/response.zig").Response;
@@ -168,7 +169,8 @@ test "index" {
     const handler = comptime Router(&[]Route{get("/", indexHandler)}, null);
 
     var req = request{
-        .method = .Get,
+        .buf = undefined,
+        .method = Method.Get,
         .headers = undefined,
         .path = "/",
         .query = undefined,
@@ -193,7 +195,8 @@ test "args" {
     const handler = comptime Router(&[]Route{get("/a/{num}", argHandler)}, null);
 
     var req = request{
-        .method = .Get,
+        .buf = undefined,
+        .method = Method.Get,
         .headers = undefined,
         .path = "/a/14",
         .query = undefined,
@@ -220,7 +223,8 @@ test "delim string" {
     const handler = comptime Router(&[]Route{get("/{str;}", delimHandler)}, null);
 
     var req = request{
-        .method = .Get,
+        .buf = undefined,
+        .method = Method.Get,
         .headers = undefined,
         .path = "/all/of/this.html",
         .query = undefined,
@@ -247,7 +251,8 @@ test "subRoute" {
     const handler = comptime Router(&[]Route{subRoute(std.debug.global_allocator, "/sub", &[]Route{get("/other", indexHandler)}, null)}, null);
 
     var req = request{
-        .method = .Get,
+        .buf = undefined,
+        .method = Method.Get,
         .path = "/sub/other",
         .query = undefined,
         .body = undefined,
@@ -272,7 +277,8 @@ test "static files" {
     )}, null);
 
     var req = request{
-        .method = .Get,
+        .buf = undefined,
+        .method = Method.Get,
         .path = "/static/example-file.txt",
         .query = undefined,
         .body = undefined,
@@ -295,7 +301,8 @@ test "optional char" {
     const handler = comptime Router(&[]Route{get("/about/?", indexHandler)}, null);
 
     var req = request{
-        .method = .Get,
+        .buf = undefined,
+        .method = Method.Get,
         .headers = undefined,
         .path = "/about",
         .query = undefined,

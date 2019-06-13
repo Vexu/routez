@@ -145,30 +145,16 @@ pub const StatusCode = enum(u16) {
     }
 };
 
-pub const Method = enum {
-    Get,
-    Head,
-    Post,
-    Put,
-    Delete,
-    Connect,
-    Options,
-    Trace,
-    Patch,
-
-    pub fn toString(self: Method) []const u8 {
-        return switch (self) {
-            .Get => "GET",
-            .Head => "HEAD",
-            .Post => "POST",
-            .Put => "PUT",
-            .Delete => "DELETE",
-            .Connect => "CONNECT",
-            .Options => "OPTIONS",
-            .Trace => "TRACE",
-            .Patch => "PATCH",
-        };
-    }
+pub const Method = struct {
+    pub const Get = "GET";
+    pub const Head = "HEAD";
+    pub const Post = "POST";
+    pub const Put = "PUT";
+    pub const Delete = "DELETE";
+    pub const Connect = "CONNECT";
+    pub const Options = "OPTIONS";
+    pub const Trace = "TRACE";
+    pub const Patch = "PATCH";
 };
 
 pub const Version = enum {
