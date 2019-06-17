@@ -11,8 +11,6 @@ WIP - basics work but a lot of work is still needed
 ### Routing
 - [ ] Optional, Wildcard, etc chars in route
 - [ ] Better unicode support
-### Server
-- [ ] Better default error handler
 
 ## Example
 ### [basic](examples/basic.zig)

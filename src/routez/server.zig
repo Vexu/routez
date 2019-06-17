@@ -1,6 +1,7 @@
 const std = @import("std");
 const os = std.os;
-const Allocator = std.mem.Allocator;
+const mem = std.mem;
+const Allocator = mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const TcpServer = std.event.net.Server;
 const Loop = std.event.Loop;
@@ -8,6 +9,7 @@ const Address = std.net.Address;
 const File = std.os.File;
 const net = std.event.net;
 const Stream = std.event.net.OutStream.Stream;
+const builtin = @import("builtin");
 const request = @import("http/request.zig");
 const response = @import("http/response.zig");
 use @import("http.zig");
@@ -54,10 +56,9 @@ pub const Server = struct {
         (await handle) catch |err| {
             std.debug.warn("unable to handle connection: {}\n", err);
         };
-
-        // workaround to fix some requests not arriving
-        // todo fix properly
+        // todo handle keep-alive
         socket.close();
+        cancel @handle();
     }
 
     async fn handleHttpRequest(server: *Server, socket: File) !void {
@@ -81,7 +82,7 @@ pub const Server = struct {
             server.handler(&req, &res) catch |e| {
                 try defaultErrorHandler(e, &req, &res);
             };
-            return await (try async writeResponse(server, socket.handle, req.version, &res));
+            return await (try async writeResponse(server, socket.handle, &req, &res));
         } else |e| {
             std.debug.warn("error parsing: {}\n", e);
             return e;
@@ -97,23 +98,34 @@ pub const Server = struct {
         // return writeResponse(&socket_out.stream, .Http11, &res);
     }
 
-    async fn writeResponse(server: *Server, fd: os.FileHandle, version: Version, res: Response) !void {
+    async fn writeResponse(server: *Server, fd: os.FileHandle, req: Request, res: Response) !void {
         const body = res.body.buf.toSlice();
+        const is_head = mem.eql(u8, req.method, Method.Head);
 
         var buf_stream = response.OutStream.init(server.allocator);
         try buf_stream.buf.ensureCapacity(512);
         defer buf_stream.buf.deinit();
         var stream = &buf_stream.stream;
 
-        try stream.print("{} {} {}\r\n", version.toString(), @enumToInt(res.status_code), res.status_code.toString());
-        try stream.print("content-length: {}\r\n", body.len);
+        try stream.print("{} {} {}\r\n", req.version.toString(), @enumToInt(res.status_code), res.status_code.toString());
+
+        // workaround to fix some requests not arriving
+        // todo properly support keep-alive
+        try stream.write("connection: close\r\n");
+
         for (res.headers.list.toSlice()) |header| {
             try stream.print("{}: {}\r\n", header.name, header.value);
         }
-        try stream.write("\r\n");
+        if (is_head) {
+            try stream.write("content-length: 0\r\n\r\n");
+        } else {
+            try stream.print("content-length: {}\r\n\r\n", body.len);
+        }
 
         try await (try async write(&server.loop, fd, buf_stream.buf.toSlice()));
-        try await (try async write(&server.loop, fd, body));
+        if (!is_head) {
+            try await (try async write(&server.loop, fd, body));
+        }
     }
 
     // copied from std.event.net with proper error values
@@ -127,8 +139,53 @@ pub const Server = struct {
     }
 
     fn defaultErrorHandler(err: anyerror, req: Request, res: Response) !void {
-        res.status_code = .InternalServerError;
-        try res.headers.put("content-type", "application/json;charset=UTF-8");
-        try res.print("{{\"error\":\"{}\"}}", @errorName(err));
+        switch (err) {
+            error.FileNotFound => {
+                res.status_code = .NotFound;
+                try res.print(
+                    \\<!DOCTYPE html>
+                    \\<html>
+                    \\<head>
+                    \\    <title>404 - Not Found</title>
+                    \\</head>
+                    \\<body>
+                    \\    <h1>Not Found</h1>
+                    \\    <p>Requested URL {} was not found.</p>
+                    \\</body>
+                    \\</html>
+                , req.path);
+            },
+            else => {
+                if (builtin.mode == .Debug) {
+                    res.status_code = .InternalServerError;
+                    try res.print(
+                        \\<!DOCTYPE html>
+                        \\<html>
+                        \\<head>
+                        \\    <title>500 - Internal Server Error</title>
+                        \\</head>
+                        \\<body>
+                        \\    <h1>Internal Server Error</h1>
+                        \\    <p>Debug info - Error: {}</p>
+                        \\</body>
+                        \\</html>
+                    , @errorName(err));
+                } else {
+                    res.status_code = .InternalServerError;
+                    try res.write(
+                        \\<!DOCTYPE html>
+                        \\<html>
+                        \\<head>
+                        \\    <title>500 - Internal Server Error</title>
+                        \\</head>
+                        \\<body>
+                        \\    <h1>Internal Server Error</h1>
+                        \\    <p>Requested URL {} was not found.</p>
+                        \\</body>
+                        \\</html>
+                    );
+                }
+            },
+        }
     }
 };
