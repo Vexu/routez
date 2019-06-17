@@ -115,7 +115,7 @@ pub fn subRoute(allocator: *std.mem.Allocator, route: []const u8, comptime route
                 } else {
                     if (match(r, err, req, res, args.path) catch |e| {
                         if (err_handlers == null) {
-                            return error.Notfound;
+                            return e;
                         } else {
                             return handleError(e, req, res);
                         }
@@ -125,7 +125,7 @@ pub fn subRoute(allocator: *std.mem.Allocator, route: []const u8, comptime route
                 }
             }
             // not found
-            return if (err_handlers == null) error.NotFound else return handleError(error.Notfound, req, res);
+            return if (err_handlers == null) error.FileNotFound else return handleError(error.FileNotFound, req, res);
         }
 
         fn handleError(err: anyerror, req: Request, res: Response) !void {
@@ -142,6 +142,8 @@ pub fn subRoute(allocator: *std.mem.Allocator, route: []const u8, comptime route
     return createRoute(Method.Get, path, handler);
 }
 
+// todo static cofig
+// todo uri decode path
 pub fn static(local_path: []const u8, remote_path: ?[]const u8) Route {
     const handler = struct {
         fn staticHandler(req: Request, res: Response, args: *const struct {
@@ -159,7 +161,6 @@ pub fn static(local_path: []const u8, remote_path: ?[]const u8) Route {
     var path = if (remote_path) |r| if (r[r.len - 1] == '/') r ++ "{path;}" else r ++ "/{path;}" else "/{path;}";
     return createRoute(Method.Get, path, handler);
 }
-
 
 // for tests
 const request = @import("http/request.zig").Request;

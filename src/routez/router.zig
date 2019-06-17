@@ -41,7 +41,7 @@ pub fn Router(comptime routes: []Route, comptime err_handlers: ?[]ErrorHandler) 
                 } else {
                     if (match(route, err, req, res, req.path) catch |e| {
                         if (err_handlers == null) {
-                            return error.Notfound;
+                            return e;
                         } else {
                             return handleError(e, req, res);
                         }
@@ -51,16 +51,16 @@ pub fn Router(comptime routes: []Route, comptime err_handlers: ?[]ErrorHandler) 
                 }
             }
             // not found
-            return if (err_handlers == null) error.HandleFailed else return handleError(error.Notfound, req, res);
+            return if (err_handlers == null) error.FileNotFound else return handleError(error.FileNotFound, req, res);
         }
 
-        fn handleError(err: anyerror, req: Request, res: Response) error{HandleFailed}!void {
+        fn handleError(err: anyerror, req: Request, res: Response) !void {
             inline for (err_handlers) |e| {
                 if (err == e.err) {
                     return e.handler(req, res);
                 }
             }
-            return error.HandleFailed;
+            return err;
         }
     }.handle;
 }
@@ -299,7 +299,7 @@ pub fn match(
         if (!mem.eql(u8, req.method, m)) {
             res.status_code = .MethodNotAllowed;
             // routing was successful but method was not allowed
-            return true;
+            return true; // todo return false and try to find a route with correct method
         }
     }
 
