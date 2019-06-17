@@ -136,7 +136,7 @@ pub const Headers = struct {
         var name: []u8 = "";
         var header: *Header = undefined;
         while (true) : (i.* += 1) {
-            if (i.* > count.*) {
+            if (i.* >= count.*) {
                 if (count.* < buffer.len) {
                     // message ended, error if state is incorrect
                     if (state == .AfterCr) {

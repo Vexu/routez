@@ -61,7 +61,7 @@ pub const Request = struct {
         var headers_done = false;
 
         while (true) : (i += 1) {
-            if (i > count) {
+            if (i >= count) {
                 if (count != 0 and count < buffer.len) {
                     // message has been read in its entirety
                     if (state != .Body and state != .Headers and !headers_done) {
@@ -69,22 +69,25 @@ pub const Request = struct {
                         return Error.TooShort; // todo this is incorrectly being returned
                     }
                     req.buf = allocator.realloc(buffer, i) catch buffer[0..i];
-                    req.body = buffer[begin .. i - 1];
+                    req.body = buffer[begin..i];
                     return req;
+                } else if (count == buffer.len) {
+                    buffer = try allocator.realloc(buffer, buffer.len * 4);
                 }
-                count += await (try async stream.read(buffer[i - 1 ..])) catch {
+                count += await (try async stream.read(buffer[count..])) catch {
                     // todo probably incorrect way to handle this
                     return Error.OutOfMemory;
                 };
             }
             if (state == .Body) {
+                i = count - 1;
                 continue;
             }
 
             switch (state) {
                 .Method => {
                     // todo should probably validate given chars
-                    if (buffer[i] == ' ') {
+                    if (buffer[i] == ' ') { // Conditional jump or move depends on uninitialised value(s), possible problem
                         if (i == 0) {
                             return Error.InvalidMethod;
                         }
@@ -101,7 +104,7 @@ pub const Request = struct {
                         state = .Version;
                         begin = i + 1;
                     } else if (buffer[begin] == '*') {
-                        req.path = buffer[i .. i + 1];
+                        req.path = buffer[begin .. begin + 1];
                         state = .AfterPath;
                     }
                 },
