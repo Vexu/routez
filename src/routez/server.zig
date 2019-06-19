@@ -9,10 +9,12 @@ const Address = std.net.Address;
 const File = std.os.File;
 const net = std.event.net;
 const Stream = std.event.net.OutStream.Stream;
+const time = std.os.time;
 const builtin = @import("builtin");
 const request = @import("http/request.zig");
 const response = @import("http/response.zig");
 use @import("http.zig");
+use @import("http/session.zig");
 use @import("router.zig");
 
 pub const Server = struct {
@@ -20,25 +22,31 @@ pub const Server = struct {
     handler: HandlerFn,
     loop: Loop,
     allocator: *Allocator,
+    config: Config,
 
-    pub const Properties = struct {
-        multithreaded: bool,
+    pub const Config = struct {
+        multithreaded: bool, // = true,
+        keepalive_time: u64, // = 5000,
+        max_header_size: u32, // = 80 * 1024,
     };
 
-    pub fn init(s: *Server, allocator: *Allocator, properties: Properties, comptime routes: []Route, comptime err_handlers: ?[]ErrorHandler) !void {
-        const loop_init = if (properties.multithreaded) Loop.initMultiThreaded else Loop.initSingleThreaded;
+    pub fn init(s: *Server, allocator: *Allocator, config: Config, comptime routes: []Route, comptime err_handlers: ?[]ErrorHandler) !void {
+        const loop_init = if (config.multithreaded) Loop.initMultiThreaded else Loop.initSingleThreaded;
 
         s.handler = Router(routes, err_handlers);
         s.allocator = allocator;
         try loop_init(&s.loop, allocator);
         s.server = TcpServer.init(&s.loop);
+        s.config = config;
     }
 
-    pub fn listen(server: *Server, address: *Address) !void {
+    pub fn listen(server: *Server, address: *Address) void {
         errdefer server.deinit();
         errdefer server.loop.deinit();
-        // todo error AddressInUse
-        try server.server.listen(address, handleRequest);
+        server.server.listen(address, handleRequest) catch |e| {
+            std.debug.warn("{}\n", e);
+            os.abort();
+        };
         server.loop.run();
     }
 
@@ -52,16 +60,73 @@ pub const Server = struct {
     }
 
     pub async<*Allocator> fn handleRequest(server: *TcpServer, addr: *const std.net.Address, socket: File) void {
-        const handle = async handleHttpRequest(@fieldParentPtr(Server, "server", server), socket) catch return;
-        (await handle) catch |err| {
-            std.debug.warn("unable to handle connection: {}\n", err);
+        const self = @fieldParentPtr(Server, "server", server);
+        defer socket.close();
+        defer cancel @handle();
+
+        var s = Session{
+            .buf = undefined,
+            .index = 0,
+            .count = 0,
+            .socket = socket.handle,
+            .connection = .KeepAlive,
+            .upgrade = .None,
+            .state = .Message,
+            .last_message = 0,
+            .handle = null,
         };
-        // todo handle keep-alive
-        socket.close();
-        cancel @handle();
+
+        defer if (s.handle) |h| cancel h;
+
+        s.buf = self.allocator.alloc(u8, 1024) catch return;
+        defer self.allocator.free(s.buf);
+
+        var socket_in = net.InStream.init(&self.loop, socket.handle);
+        var stream = &socket_in.stream;
+        var read: usize = undefined;
+
+        while (true) {
+            if (s.count >= s.buf.len) {
+                // todo improve
+                if (s.buf.len * 2 > self.config.max_header_size) {
+                    return;
+                }
+                s.buf = self.allocator.realloc(s.buf, s.buf.len * 2) catch return;
+            }
+            read = await (async stream.read(s.buf[s.count..]) catch return) catch {
+                // todo probably incorrect way to handle this
+                return;
+            };
+            if (read != 0) {
+                s.state = .Message;
+            }
+            s.count += read;
+            switch (s.state) {
+                .Message => {
+                    if (s.handle) |h| {
+                        // unreachable for some reason?
+                        // resume h;
+                        std.debug.warn("unreachable?\n");
+                    } else {
+                        s.handle = async handleHttpRequest(self, &s) catch return;
+                    }
+                },
+                .KeepAlive => {
+                    if (s.connection != .KeepAlive) {
+                        return;
+                    }
+                    // resume other operations, return when keepalive_time reached
+                    await (async self.loop.yield() catch return);
+                    // causes segfault
+                    // if (time.timestamp() - s.last_message > self.config.keepalive_time) {
+                    //     return;
+                    // }
+                },
+            }
+        }
     }
 
-    async fn handleHttpRequest(server: *Server, socket: File) !void {
+    async fn handleHttpRequest(server: *Server, s: *Session) !void {
         var out_stream = response.OutStream.init(server.allocator);
         defer out_stream.buf.deinit();
 
@@ -69,33 +134,32 @@ pub const Server = struct {
         var arena = ArenaAllocator.init(server.allocator);
         defer arena.deinit();
 
+        defer s.count = 0;
+        defer s.index = 0;
+        // defer s.last_message = time.timestamp();
+        defer s.state = .KeepAlive;
+        defer s.handle = null;
+
+        var req = request.Request{
+            .method = "",
+            .headers = Headers.init(&arena.allocator),
+            .path = "",
+            .query = "",
+            .body = "",
+            .version = .Http11,
+        };
         var res = response.Response{
-            .status_code = .InternalServerError,
+            .status_code = undefined,
             .headers = Headers.init(&arena.allocator),
             .body = out_stream,
         };
 
-        var socket_in = net.InStream.init(&server.loop, socket.handle);
-
-        if (await (try async request.Request.parse(&arena.allocator, &socket_in.stream))) |req| {
-            defer req.deinit();
+        if (await (try async request.Request.parse(&req, s))) {
             server.handler(&req, &res) catch |e| {
                 try defaultErrorHandler(e, &req, &res);
             };
-            return await (try async writeResponse(server, socket.handle, &req, &res));
-        } else |e| {
-            std.debug.warn("error parsing: {}\n", e);
-            return e;
-        }
-        // TODO: zig: /build/zig/src/zig-0.4.0/src/ir.cpp:21059: IrInstruction*
-        //      ir_analyze_instruction_check_switch_prongs(IrAnalyze*, IrInstructionCheckSwitchProngs*):
-        //      Assertion `start_value->value.type->id == ZigTypeIdErrorSet' failed.
-        // switch (e) {
-        //     .InvalidVersion => res.status_code = .HttpVersionNotSupported,
-        //     .OutOfMemory => res.status_code = .InternalServerError,
-        //     else => res.status_code = .BadRequest,
-        // }
-        // return writeResponse(&socket_out.stream, .Http11, &res);
+        } else |e| try defaultErrorHandler(e, &req, &res);
+        return await (try async writeResponse(server, s.socket, &req, &res));
     }
 
     async fn writeResponse(server: *Server, fd: os.FileHandle, req: Request, res: Response) !void {
@@ -111,7 +175,7 @@ pub const Server = struct {
 
         // workaround to fix some requests not arriving
         // todo properly support keep-alive
-        try stream.write("connection: close\r\n");
+        // try stream.write("connection: close\r\n");
 
         for (res.headers.list.toSlice()) |header| {
             try stream.print("{}: {}\r\n", header.name, header.value);
