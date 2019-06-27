@@ -215,46 +215,51 @@ pub const Headers = struct {
     }
 };
 
-// test "parse" {
-//     var h = try async<std.debug.global_allocator> parseTest();
-//     resume h;
-//     cancel h;
-// }
+test "parse" {
+    var h = try async<std.debug.global_allocator> parseTest();
+    resume h;
+    cancel h;
+}
 
 async fn parseTest() !void {
     suspend;
-    const str = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:67.0) Gecko/20100101 Firefox/67.0\r\n" ++
+    const a = std.debug.global_allocator;
+    var b = try mem.dupe(a, u8, "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:67.0) Gecko/20100101 Firefox/67.0\r\n" ++
         "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n" ++
         "Accept-Language: en-US,en;q=0.5\r\n" ++
         "Accept-Encoding: gzip, deflate\r\n" ++
         "DNT: 1\r\n" ++
         "Connection: keep-alive\r\n" ++
-        "Upgrade-Insecure-Requests: 1\r\n\r\n";
-
-    const buf = try std.debug.global_allocator.alloc(u8, str.len);
-    defer std.debug.global_allocator.free(buf);
-    mem.copy(u8, buf, str);
-
-    var h = Headers.init(std.debug.global_allocator);
+        "Upgrade-Insecure-Requests: 1\r\n\r\n");
+    defer a.free(b);
+    var sess = Session{
+        .buf = b,
+        .index = 0,
+        .count = b.len,
+        .socket = undefined,
+        .connection = undefined,
+        .upgrade = undefined,
+        .state = undefined,
+        .last_message = undefined,
+        .handle = undefined,
+    };
+    var h = Headers.init(a);
     defer h.deinit();
-    var i: usize = 0;
-    var count: usize = str.len;
-    var done = false;
-    _ = try await (try async h.parse(buf, &i, &count, &done));
+    try await (try async h.parse(&sess));
 
     var slice = h.list.toSlice();
     assert(mem.eql(u8, slice[0].name, "user-agent"));
     assert(mem.eql(u8, slice[0].value, "Mozilla/5.0 (X11; Linux x86_64; rv:67.0) Gecko/20100101 Firefox/67.0"));
-    assert(mem.eql(u8, slice[0].name, "accept"));
+    assert(mem.eql(u8, slice[1].name, "accept"));
     assert(mem.eql(u8, slice[1].value, "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"));
-    assert(mem.eql(u8, slice[0].name, "accept-language"));
+    assert(mem.eql(u8, slice[2].name, "accept-language"));
     assert(mem.eql(u8, slice[2].value, "en-US,en;q=0.5"));
-    assert(mem.eql(u8, slice[0].name, "accept-encoding"));
+    assert(mem.eql(u8, slice[3].name, "accept-encoding"));
     assert(mem.eql(u8, slice[3].value, "gzip, deflate"));
-    assert(mem.eql(u8, slice[0].name, "dnt"));
+    assert(mem.eql(u8, slice[4].name, "dnt"));
     assert(mem.eql(u8, slice[4].value, "1"));
-    assert(mem.eql(u8, slice[0].name, "connection"));
+    assert(mem.eql(u8, slice[5].name, "connection"));
     assert(mem.eql(u8, slice[5].value, "keep-alive"));
-    assert(mem.eql(u8, slice[0].name, "upgrade-Insecure-Requests"));
+    assert(mem.eql(u8, slice[6].name, "upgrade-insecure-requests"));
     assert(mem.eql(u8, slice[6].value, "1"));
 }

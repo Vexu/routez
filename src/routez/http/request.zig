@@ -74,7 +74,7 @@ pub const Request = struct {
                 .Path => {
                     if (s.buf[s.index] == ' ') {
                         const uri = try Uri.parse(s.buf[begin..s.index], true);
-                        req.path = uri.path; // todo path should be collapsed from /../file to /file
+                        req.path = try Uri.collapsePath(req.headers.list.allocator, uri.path);
                         req.query = uri.query;
                         state = .Version;
                         begin = s.index + 1;
@@ -154,60 +154,80 @@ pub const Request = struct {
     }
 };
 
-pub const TestStream = struct {
-    buf: []const u8,
-    stream: S,
+/// for testing, normally all memory is freed when the arena allocator is freed
+pub fn deinit(req: *Request) void {
+    req.headers.list.allocator.free(req.path);
+    req.headers.deinit();
+}
 
-    pub const Error = std.event.net.ReadError;
-    pub const S = std.event.io.InStream(Error);
+pub fn testParse(buf: []u8) Session {
+    return Session{
+        .buf = buf,
+        .index = 0,
+        .count = buf.len,
+        .socket = undefined,
+        .connection = undefined,
+        .upgrade = undefined,
+        .state = undefined,
+        .last_message = undefined,
+        .handle = undefined,
+    };
+}
 
-    pub fn init(buf: []const u8) TestStream {
-        return TestStream{
-            .buf = buf,
-            .stream = S{ .readFn = readFn },
-        };
-    }
-
-    async<*mem.Allocator> fn readFn(in_stream: *S, bytes: []u8) Error!usize {
-        const buf = @fieldParentPtr(TestStream, "stream", in_stream).buf;
-        mem.copy(u8, bytes, buf);
-        return buf.len;
-    }
-};
-
-// test "HTTP/0.9" {
-//     var h = try async<std.debug.global_allocator> http09();
-//     resume h;
-//     cancel h;
-// }
+test "HTTP/0.9" {
+    var h = try async<std.debug.global_allocator> http09();
+    resume h;
+    cancel h;
+}
 
 async fn http09() !void {
     suspend;
-    var stream = TestStream.init("GET / HTTP/0.9\r\n");
-    const req = try await (try async Request.parse(std.debug.global_allocator, &stream.stream));
-    defer req.deinit();
+    const a = std.debug.global_allocator;
+    var b = try mem.dupe(a, u8, "GET / HTTP/0.9\r\n");
+    defer a.free(b);
+    var sess = testParse(b);
+    var req = Request{
+        .method = undefined,
+        .headers = Headers.init(a),
+        .path = undefined,
+        .query = undefined,
+        .body = undefined,
+        .version = .Http11,
+    };
+    defer deinit(&req);
+    try await (try async req.parse(&sess));
     assert(mem.eql(u8, req.method, Method.Get));
     assert(mem.eql(u8, req.path, "/"));
     assert(req.version == .Http09);
 }
 
-// test "HTTP/1.1" {
-//     var h = try async<std.debug.global_allocator> http11();
-//     resume h;
-//     cancel h;
-// }
+test "HTTP/1.1" {
+    var h = try async<std.debug.global_allocator> http11();
+    resume h;
+    cancel h;
+}
 
 async fn http11() !void {
     suspend;
-    var a = std.debug.global_allocator;
-    var stream = TestStream.init("POST /about HTTP/1.1\r\n" ++
+    const a = std.debug.global_allocator;
+    var b = try mem.dupe(a, u8, "POST /about HTTP/1.1\r\n" ++
         "expires: Mon, 08 Jul 2019 11:49:03 GMT\r\n" ++
         "last-modified: Fri, 09 Nov 2018 06:15:00 GMT\r\n" ++
         "X-Test: test\r\n" ++
         " obs-fold\r\n" ++
         "\r\na body\n");
-    const req = try await (try async Request.parse(a, &stream.stream));
-    defer req.deinit();
+    defer a.free(b);
+    var sess = testParse(b);
+    var req = Request{
+        .method = undefined,
+        .headers = Headers.init(a),
+        .path = undefined,
+        .query = undefined,
+        .body = undefined,
+        .version = .Http11,
+    };
+    defer deinit(&req);
+    try await (try async req.parse(&sess));
     assert(mem.eql(u8, req.method, Method.Post));
     assert(mem.eql(u8, req.path, "/about"));
     assert(req.version == .Http11);
@@ -218,18 +238,26 @@ async fn http11() !void {
     assert(mem.eql(u8, (try req.headers.get(a, "x-test")).?[0].value, "test obs-fold"));
 }
 
-// test "HTTP/3.0" {
-//     var h = try async<std.debug.global_allocator> http30();
-//     resume h;
-//     cancel h;
-// }
+test "HTTP/3.0" {
+    var h = try async<std.debug.global_allocator> http30();
+    resume h;
+    cancel h;
+}
 
 async fn http30() !void {
     suspend;
-    var a = std.debug.global_allocator;
-    var stream = TestStream.init("POST /about HTTP/3.0\r\n\r\n");
-    _ = await (try async<a> Request.parse(a, &stream.stream)) catch |e| {
-        assert(e == Request.Error.UnsupportedVersion);
-        return;
+    const a = std.debug.global_allocator;
+    var b = try mem.dupe(a, u8, "POST /about HTTP/3.0\r\n\r\n");
+    defer a.free(b);
+    var sess = testParse(b);
+    var req = Request{
+        .method = undefined,
+        .headers = Headers.init(a),
+        .path = undefined,
+        .query = undefined,
+        .body = undefined,
+        .version = .Http11,
     };
+    defer deinit(&req);
+    std.testing.expectError(error.UnsupportedVersion, await (try async req.parse(&sess)));
 }
