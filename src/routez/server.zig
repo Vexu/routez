@@ -6,10 +6,10 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 const TcpServer = std.event.net.Server;
 const Loop = std.event.Loop;
 const Address = std.net.Address;
-const File = std.os.File;
+const File = std.fs.File;
 const net = std.event.net;
 const Stream = std.event.net.OutStream.Stream;
-const time = std.os.time;
+const time = std.time;
 const builtin = @import("builtin");
 const request = @import("http/request.zig");
 const response = @import("http/response.zig");
@@ -163,7 +163,7 @@ pub const Server = struct {
         return await (try async writeResponse(server, s.socket, &req, &res));
     }
 
-    async fn writeResponse(server: *Server, fd: os.FileHandle, req: Request, res: Response) !void {
+    async fn writeResponse(server: *Server, fd: os.fd_t, req: Request, res: Response) !void {
         const body = res.body.buf.toSlice();
         const is_head = mem.eql(u8, req.method, Method.Head);
 
@@ -194,12 +194,12 @@ pub const Server = struct {
     }
 
     // copied from std.event.net with proper error values
-    async fn write(loop: *Loop, fd: os.FileHandle, buffer: []const u8) !void {
-        const iov = os.posix.iovec_const{
+    async fn write(loop: *Loop, fd: os.fd_t, buffer: []const u8) !void {
+        const iov = os.iovec_const{
             .iov_base = buffer.ptr,
             .iov_len = buffer.len,
         };
-        const iovs: *const [1]os.posix.iovec_const = &iov;
+        const iovs: *const [1]os.iovec_const = &iov;
         return await (async net.writevPosix(loop, fd, iovs, 1) catch unreachable);
     }
 
