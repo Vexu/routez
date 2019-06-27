@@ -6,7 +6,7 @@ const Mime = struct {
     mime: []const u8,
 };
 
-const mimes = []Mime{
+const mimes = [_]Mime{
     Mime{ .extension = "js", .mime = js },
     Mime{ .extension = "css", .mime = css },
     Mime{ .extension = "html", .mime = html },

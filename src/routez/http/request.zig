@@ -3,10 +3,10 @@ const mem = std.mem;
 const Allocator = mem.Allocator;
 const assert = std.debug.assert;
 const Stream = std.event.net.InStream.Stream;
-use @import("headers.zig");
-use @import("common.zig");
-use @import("session.zig");
-use @import("zuri");
+usingnamespace @import("headers.zig");
+usingnamespace @import("common.zig");
+usingnamespace @import("session.zig");
+usingnamespace @import("zuri");
 
 pub const Request = struct {
     method: []const u8,
@@ -74,7 +74,7 @@ pub const Request = struct {
                 .Path => {
                     if (s.buf[s.index] == ' ') {
                         const uri = try Uri.parse(s.buf[begin..s.index], true);
-                        req.path = uri.path;
+                        req.path = uri.path; // todo path should be collapsed from /../file to /file
                         req.query = uri.query;
                         state = .Version;
                         begin = s.index + 1;

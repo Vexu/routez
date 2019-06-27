@@ -2,8 +2,8 @@ const std = @import("std");
 const assert = std.debug.assert;
 const builtin = @import("builtin");
 const TypeId = builtin.TypeId;
-use @import("http.zig");
-use @import("router.zig");
+usingnamespace @import("http.zig");
+usingnamespace @import("router.zig");
 
 pub fn all(path: []const u8, handler: var) Route {
     return createRoute(null, path, handler);
@@ -151,7 +151,7 @@ pub fn static(local_path: []const u8, remote_path: ?[]const u8) Route {
         }) !void {
             const allocator = res.allocator();
             const path = if (local_path[local_path.len - 1] == '/') local_path else local_path ++ "/";
-            const full_path = try std.os.path.join(allocator, [][]const u8{ path, args.path });
+            const full_path = try std.fs.path.join(allocator, [_][]const u8{ path, args.path });
 
             try res.sendFile(full_path);
             res.status_code = .Ok;
@@ -167,10 +167,9 @@ const request = @import("http/request.zig").Request;
 const response = @import("http/response.zig").Response;
 
 test "index" {
-    const handler = comptime Router(&[]Route{get("/", indexHandler)}, null);
+    const handler = comptime Router(&[_]Route{get("/", indexHandler)}, null);
 
     var req = request{
-        .buf = undefined,
         .method = Method.Get,
         .headers = undefined,
         .path = "/",
@@ -193,10 +192,9 @@ fn indexHandler(req: Request, res: Response) void {
 }
 
 test "args" {
-    const handler = comptime Router(&[]Route{get("/a/{num}", argHandler)}, null);
+    const handler = comptime Router(&[_]Route{get("/a/{num}", argHandler)}, null);
 
     var req = request{
-        .buf = undefined,
         .method = Method.Get,
         .headers = undefined,
         .path = "/a/14",
@@ -221,10 +219,9 @@ fn argHandler(req: Request, res: Response, args: *const struct {
 }
 
 test "delim string" {
-    const handler = comptime Router(&[]Route{get("/{str;}", delimHandler)}, null);
+    const handler = comptime Router(&[_]Route{get("/{str;}", delimHandler)}, null);
 
     var req = request{
-        .buf = undefined,
         .method = Method.Get,
         .headers = undefined,
         .path = "/all/of/this.html",
@@ -249,10 +246,9 @@ fn delimHandler(req: Request, res: Response, args: *const struct {
 }
 
 test "subRoute" {
-    const handler = comptime Router(&[]Route{subRoute(std.debug.global_allocator, "/sub", &[]Route{get("/other", indexHandler)}, null)}, null);
+    const handler = comptime Router(&[_]Route{subRoute(std.debug.global_allocator, "/sub", &[_]Route{get("/other", indexHandler)}, null)}, null);
 
     var req = request{
-        .buf = undefined,
         .method = Method.Get,
         .path = "/sub/other",
         .query = undefined,
@@ -272,13 +268,12 @@ test "subRoute" {
 }
 
 test "static files" {
-    const handler = comptime Router(&[]Route{static(
+    const handler = comptime Router(&[_]Route{static(
         "assets",
         "/static",
     )}, null);
 
     var req = request{
-        .buf = undefined,
         .method = Method.Get,
         .path = "/static/example-file.txt",
         .query = undefined,
@@ -299,10 +294,9 @@ test "static files" {
 }
 
 test "optional char" {
-    const handler = comptime Router(&[]Route{get("/about/?", indexHandler)}, null);
+    const handler = comptime Router(&[_]Route{get("/about/?", indexHandler)}, null);
 
     var req = request{
-        .buf = undefined,
         .method = Method.Get,
         .headers = undefined,
         .path = "/about",

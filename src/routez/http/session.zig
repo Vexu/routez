@@ -5,7 +5,7 @@ pub const Session = struct {
     buf: []u8,
     index: usize,
     count: usize,
-    socket: os.FileHandle,
+    socket: os.fd_t,
     connection: Connection,
     upgrade: Upgrade,
     state: State,

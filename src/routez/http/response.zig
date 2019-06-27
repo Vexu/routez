@@ -1,7 +1,7 @@
 const std = @import("std");
 const mime = @import("../mime.zig");
-use @import("headers.zig");
-use @import("common.zig");
+usingnamespace @import("headers.zig");
+usingnamespace @import("common.zig");
 
 pub const Response = struct {
     status_code: StatusCode,
@@ -17,7 +17,7 @@ pub const Response = struct {
 
     // todo improve, cache control
     pub fn sendFile(res: *Response, path: []const u8) !void {
-        var out_stream = (try std.os.File.openRead(path)).inStream();
+        var out_stream = (try std.fs.File.openRead(path)).inStream();
         defer out_stream.file.close();
         const stream = &out_stream.stream;
 

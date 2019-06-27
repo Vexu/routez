@@ -3,7 +3,7 @@ const mem = std.mem;
 const assert = std.debug.assert;
 const Allocator = mem.Allocator;
 const ArrayList = std.ArrayList;
-use @import("session.zig");
+usingnamespace @import("session.zig");
 
 pub const Headers = struct {
     list: HeaderList,

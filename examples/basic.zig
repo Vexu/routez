@@ -1,10 +1,9 @@
 const std = @import("std");
 const Address = std.net.Address;
-use @import("routez");
+usingnamespace @import("routez");
 
 pub fn main() !void {
-    var direct_alloc = std.heap.DirectAllocator.init();
-    var allocator = &direct_alloc.allocator;
+    var allocator = std.heap.direct_allocator;
 
     var server: Server = undefined;
     try server.init(
@@ -14,7 +13,7 @@ pub fn main() !void {
             .keepalive_time = 5000,
             .max_header_size = 80 * 1024,
         },
-        &[]Route{
+        &[_]Route{
             all("/", indexHandler),
             get("/about", aboutHandler),
             get("/about/more", aboutHandler2),

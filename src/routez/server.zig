@@ -13,9 +13,9 @@ const time = std.os.time;
 const builtin = @import("builtin");
 const request = @import("http/request.zig");
 const response = @import("http/response.zig");
-use @import("http.zig");
-use @import("http/session.zig");
-use @import("router.zig");
+usingnamespace @import("http.zig");
+usingnamespace @import("http/session.zig");
+usingnamespace @import("router.zig");
 
 pub const Server = struct {
     server: TcpServer,
@@ -25,9 +25,9 @@ pub const Server = struct {
     config: Config,
 
     pub const Config = struct {
-        multithreaded: bool, // = true,
-        keepalive_time: u64, // = 5000,
-        max_header_size: u32, // = 80 * 1024,
+        multithreaded: bool = true,
+        keepalive_time: u64 = 5000,
+        max_header_size: u32 = 80 * 1024,
     };
 
     pub fn init(s: *Server, allocator: *Allocator, config: Config, comptime routes: []Route, comptime err_handlers: ?[]ErrorHandler) !void {
@@ -107,6 +107,7 @@ pub const Server = struct {
                         // unreachable for some reason?
                         // resume h;
                         std.debug.warn("unreachable?\n");
+                        return;
                     } else {
                         s.handle = async handleHttpRequest(self, &s) catch return;
                     }
@@ -118,9 +119,9 @@ pub const Server = struct {
                     // resume other operations, return when keepalive_time reached
                     await (async self.loop.yield() catch return);
                     // causes segfault
-                    // if (time.timestamp() - s.last_message > self.config.keepalive_time) {
-                    //     return;
-                    // }
+                    if (time.timestamp() - s.last_message > self.config.keepalive_time) {
+                        return;
+                    }
                 },
             }
         }
@@ -136,7 +137,7 @@ pub const Server = struct {
 
         defer s.count = 0;
         defer s.index = 0;
-        // defer s.last_message = time.timestamp();
+        defer s.last_message = time.timestamp();
         defer s.state = .KeepAlive;
         defer s.handle = null;
 

@@ -1,15 +1,15 @@
-pub use @import("routez/http.zig");
+pub usingnamespace @import("routez/http.zig");
 
 const s = @import("routez/server.zig");
 pub const Server = s.Server;
 
-pub const mime = @import("routez/server.zig");
+pub const mime = @import("routez/mime.zig");
 
 const r = @import("routez/router.zig");
 pub const ErrorHandler = r.ErrorHandler;
 pub const Route = r.Route;
 
-pub use @import("routez/routes.zig");
+pub usingnamespace @import("routez/routes.zig");
 
 pub const version = struct {
     pub const major = 0;

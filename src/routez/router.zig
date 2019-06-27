@@ -6,7 +6,7 @@ const assert = std.debug.assert;
 const builtin = @import("builtin");
 const TypeInfo = builtin.TypeInfo;
 const TypeId = builtin.TypeId;
-use @import("http.zig");
+usingnamespace @import("http.zig");
 
 pub const HandlerFn = fn handle(Request, Response) anyerror!void;
 
