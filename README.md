@@ -1,16 +1,7 @@
 # routez
 Http server with router for Zig
 
-WIP - basics work but a lot of work is still needed
-
-## Todo
-### HTTP
-- [ ] HTTP/2
-- [ ] WebSocket
-- [ ] TLS
-### Routing
-- [ ] Optional, Wildcard, etc chars in route
-- [ ] Better unicode support
+On hold until coroutine rewrite is done
 
 ## Example
 ### [basic](examples/basic.zig)
