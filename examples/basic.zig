@@ -8,11 +8,7 @@ pub fn main() !void {
     var server: Server = undefined;
     try server.init(
         allocator,
-        Server.Config{
-            .multithreaded = true,
-            .keepalive_time = 5000,
-            .max_header_size = 80 * 1024,
-        },
+        Server.Config{},
         &[_]Route{
             all("/", indexHandler),
             get("/about", aboutHandler),
@@ -23,7 +19,6 @@ pub fn main() !void {
         null,
     );
     var addr = Address.initIp4(try std.net.parseIp4("127.0.0.1"), 8080);
-
     server.listen(&addr);
 }
 
