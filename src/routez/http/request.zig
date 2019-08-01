@@ -154,6 +154,8 @@ pub const Request = struct {
     }
 };
 
+const alloc = std.heap.direct_allocator;
+
 /// for testing, normally all memory is freed when the arena allocator is freed
 pub fn deinit(req: *Request) void {
     req.headers.list.allocator.free(req.path);
@@ -175,20 +177,19 @@ pub fn testParse(buf: []u8) Session {
 }
 
 test "HTTP/0.9" {
-    var h = try async<std.debug.global_allocator> http09();
+    var h = try async<alloc> http09();
     resume h;
     cancel h;
 }
 
 async fn http09() !void {
     suspend;
-    const a = std.debug.global_allocator;
-    var b = try mem.dupe(a, u8, "GET / HTTP/0.9\r\n");
-    defer a.free(b);
+    var b = try mem.dupe(alloc, u8, "GET / HTTP/0.9\r\n");
+    defer alloc.free(b);
     var sess = testParse(b);
     var req = Request{
         .method = undefined,
-        .headers = Headers.init(a),
+        .headers = Headers.init(alloc),
         .path = undefined,
         .query = undefined,
         .body = undefined,
@@ -202,57 +203,54 @@ async fn http09() !void {
 }
 
 test "HTTP/1.1" {
-    var h = try async<std.debug.global_allocator> http11();
+    var h = try async<alloc> http11();
     resume h;
     cancel h;
 }
 
 async fn http11() !void {
     suspend;
-    const a = std.debug.global_allocator;
-    var b = try mem.dupe(a, u8, "POST /about HTTP/1.1\r\n" ++
+    var b = try mem.dupe(alloc, u8, "POST /about HTTP/1.1\r\n" ++
         "expires: Mon, 08 Jul 2019 11:49:03 GMT\r\n" ++
         "last-modified: Fri, 09 Nov 2018 06:15:00 GMT\r\n" ++
         "X-Test: test\r\n" ++
         " obs-fold\r\n" ++
         "\r\na body\n");
-    defer a.free(b);
+    defer alloc.free(b);
     var sess = testParse(b);
     var req = Request{
         .method = undefined,
-        .headers = Headers.init(a),
+        .headers = Headers.init(alloc),
         .path = undefined,
         .query = undefined,
         .body = undefined,
         .version = .Http11,
     };
-    defer deinit(&req);
     try await (try async req.parse(&sess));
     assert(mem.eql(u8, req.method, Method.Post));
     assert(mem.eql(u8, req.path, "/about"));
     assert(req.version == .Http11);
     assert(mem.eql(u8, req.body, "a body\n"));
-    assert(mem.eql(u8, (try req.headers.get(a, "expires")).?[0].value, "Mon, 08 Jul 2019 11:49:03 GMT"));
-    assert(mem.eql(u8, (try req.headers.get(a, "last-modified")).?[0].value, "Fri, 09 Nov 2018 06:15:00 GMT"));
-    const val = try req.headers.get(a, "x-test");
-    assert(mem.eql(u8, (try req.headers.get(a, "x-test")).?[0].value, "test obs-fold"));
+    assert(mem.eql(u8, (try req.headers.get(alloc, "expires")).?[0].value, "Mon, 08 Jul 2019 11:49:03 GMT"));
+    assert(mem.eql(u8, (try req.headers.get(alloc, "last-modified")).?[0].value, "Fri, 09 Nov 2018 06:15:00 GMT"));
+    const val = try req.headers.get(alloc, "x-test");
+    assert(mem.eql(u8, (try req.headers.get(alloc, "x-test")).?[0].value, "test obs-fold"));
 }
 
 test "HTTP/3.0" {
-    var h = try async<std.debug.global_allocator> http30();
+    var h = try async<alloc> http30();
     resume h;
     cancel h;
 }
 
 async fn http30() !void {
     suspend;
-    const a = std.debug.global_allocator;
-    var b = try mem.dupe(a, u8, "POST /about HTTP/3.0\r\n\r\n");
-    defer a.free(b);
+    var b = try mem.dupe(alloc, u8, "POST /about HTTP/3.0\r\n\r\n");
+    defer alloc.free(b);
     var sess = testParse(b);
     var req = Request{
         .method = undefined,
-        .headers = Headers.init(a),
+        .headers = Headers.init(alloc),
         .path = undefined,
         .query = undefined,
         .body = undefined,

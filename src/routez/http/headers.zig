@@ -215,23 +215,24 @@ pub const Headers = struct {
     }
 };
 
+const alloc = std.heap.direct_allocator;
+
 test "parse" {
-    var h = try async<std.debug.global_allocator> parseTest();
+    var h = try async<alloc> parseTest();
     resume h;
     cancel h;
 }
 
 async fn parseTest() !void {
     suspend;
-    const a = std.debug.global_allocator;
-    var b = try mem.dupe(a, u8, "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:67.0) Gecko/20100101 Firefox/67.0\r\n" ++
+    var b = try mem.dupe(alloc, u8, "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:67.0) Gecko/20100101 Firefox/67.0\r\n" ++
         "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n" ++
         "Accept-Language: en-US,en;q=0.5\r\n" ++
         "Accept-Encoding: gzip, deflate\r\n" ++
         "DNT: 1\r\n" ++
         "Connection: keep-alive\r\n" ++
         "Upgrade-Insecure-Requests: 1\r\n\r\n");
-    defer a.free(b);
+    defer alloc.free(b);
     var sess = Session{
         .buf = b,
         .index = 0,
@@ -243,8 +244,8 @@ async fn parseTest() !void {
         .last_message = undefined,
         .handle = undefined,
     };
-    var h = Headers.init(a);
-    defer h.deinit();
+    var h = Headers.init(alloc);
+    defer h.list.deinit();
     try await (try async h.parse(&sess));
 
     var slice = h.list.toSlice();
