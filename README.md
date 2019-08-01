@@ -9,17 +9,16 @@ build with ```./build_examples.sh``` and run with ```./zig-cache/basic```
 ```Zig
 const std = @import("std");
 const Address = std.net.Address;
-use @import("routez");
+usingnamespace @import("routez");
 
 pub fn main() !void {
-    var direct_alloc = std.heap.DirectAllocator.init();
-    var allocator = &direct_alloc.allocator;
+    var allocator = std.heap.direct_allocator;
 
     var server: Server = undefined;
     try server.init(
         allocator,
-        Server.Properties{ .multithreaded = true },
-        &[]Route{
+        Server.Config{},
+        &[_]Route{
             all("/", indexHandler),
             get("/about", aboutHandler),
             get("/about/more", aboutHandler2),
@@ -29,8 +28,7 @@ pub fn main() !void {
         null,
     );
     var addr = Address.initIp4(try std.net.parseIp4("127.0.0.1"), 8080);
-
-    try server.listen(&addr);
+    server.listen(&addr);
 }
 
 fn indexHandler(req: Request, res: Response) !void {
