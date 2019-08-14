@@ -14,7 +14,6 @@ const builtin = @import("builtin");
 const request = @import("http/request.zig");
 const response = @import("http/response.zig");
 usingnamespace @import("http.zig");
-usingnamespace @import("http/session.zig");
 usingnamespace @import("router.zig");
 
 pub const Server = struct {
@@ -28,6 +27,35 @@ pub const Server = struct {
         multithreaded: bool = true,
         keepalive_time: u64 = 5000,
         max_header_size: u32 = 80 * 1024,
+    };
+
+    pub const Session = struct {
+        buf: []u8,
+        index: usize,
+        count: usize,
+        socket: os.fd_t,
+        connection: Connection,
+        upgrade: Upgrade,
+        state: State,
+        last_message: u64,
+        server: *Server,
+
+        const Upgrade = enum {
+            WebSocket,
+            Http2,
+            Unknown,
+            None,
+        };
+
+        const Connection = enum {
+            Close,
+            KeepAlive,
+        };
+
+        const State = enum {
+            Message,
+            KeepAlive,
+        };
     };
 
     pub fn init(s: *Server, allocator: *Allocator, config: Config, comptime routes: []Route, comptime err_handlers: ?[]ErrorHandler) !void {
@@ -59,10 +87,20 @@ pub const Server = struct {
         s.loop.deinit();
     }
 
-    pub async<*Allocator> fn handleRequest(server: *TcpServer, addr: *const std.net.Address, socket: File) void {
+    pub async fn handleRequest(server: *TcpServer, addr: *const std.net.Address, socket: File) void {
         const self = @fieldParentPtr(Server, "server", server);
+        self.loop.linuxWait(
+            socket.handle,
+            Loop.ResumeNode{
+                .id = .Basic,
+                .handle = @frame(),
+                .overlapped = Loop.ResumeNode.overlapped_init,
+            },
+            // TODO correct flags?
+            os.EPOLLIN | os.EPOLLPRI | os.EPOLLERR | os.EPOLLHUP,
+        );
+        defer self.loop.linuxRemoveFd(socket.handle);
         defer socket.close();
-        defer cancel @handle();
 
         var s = Session{
             .buf = undefined,
@@ -73,10 +111,7 @@ pub const Server = struct {
             .upgrade = .None,
             .state = .Message,
             .last_message = 0,
-            .handle = null,
         };
-
-        defer if (s.handle) |h| cancel h;
 
         s.buf = self.allocator.alloc(u8, 1024) catch return;
         defer self.allocator.free(s.buf);
@@ -85,6 +120,9 @@ pub const Server = struct {
         var stream = &socket_in.stream;
         var read: usize = undefined;
 
+        var handle = async handleHttpRequest(self, &s);
+
+        // TODO connection upgrade
         while (true) {
             if (s.count >= s.buf.len) {
                 // todo improve
@@ -93,7 +131,7 @@ pub const Server = struct {
                 }
                 s.buf = self.allocator.realloc(s.buf, s.buf.len * 2) catch return;
             }
-            read = await (async stream.read(s.buf[s.count..]) catch return) catch {
+            read = stream.read(s.buf[s.count..]) catch {
                 // todo probably incorrect way to handle this
                 return;
             };
@@ -103,31 +141,25 @@ pub const Server = struct {
             s.count += read;
             switch (s.state) {
                 .Message => {
-                    if (s.handle) |h| {
-                        // unreachable for some reason?
-                        // resume h;
-                        std.debug.warn("unreachable?\n");
-                        return;
-                    } else {
-                        s.handle = async handleHttpRequest(self, &s) catch return;
-                    }
+                    resume handle;
                 },
                 .KeepAlive => {
                     if (s.connection != .KeepAlive) {
                         return;
                     }
                     // resume other operations, return when keepalive_time reached
-                    await (async self.loop.yield() catch return);
-                    // causes segfault
-                    if (time.timestamp() - s.last_message > self.config.keepalive_time) {
-                        return;
-                    }
+                    suspend;
+                    // if (time.timestamp() - s.last_message > self.config.keepalive_time) {
+                    //     return;
+                    // }
                 },
             }
         }
     }
 
     async fn handleHttpRequest(server: *Server, s: *Session) !void {
+        suspend;
+
         var out_stream = response.OutStream.init(server.allocator);
         defer out_stream.buf.deinit();
 
@@ -155,15 +187,15 @@ pub const Server = struct {
             .body = out_stream,
         };
 
-        if (await (try async request.Request.parse(&req, s))) {
+        if (request.Request.parse(&req, s)) {
             server.handler(&req, &res) catch |e| {
                 try defaultErrorHandler(e, &req, &res);
             };
         } else |e| try defaultErrorHandler(e, &req, &res);
-        return await (try async writeResponse(server, s.socket, &req, &res));
+        return writeResponse(server, s.socket, &req, &res);
     }
 
-    async fn writeResponse(server: *Server, fd: os.fd_t, req: Request, res: Response) !void {
+    fn writeResponse(server: *Server, fd: os.fd_t, req: Request, res: Response) !void {
         const body = res.body.buf.toSlice();
         const is_head = mem.eql(u8, req.method, Method.Head);
 
@@ -174,10 +206,6 @@ pub const Server = struct {
 
         try stream.print("{} {} {}\r\n", req.version.toString(), @enumToInt(res.status_code), res.status_code.toString());
 
-        // workaround to fix some requests not arriving
-        // todo properly support keep-alive
-        // try stream.write("connection: close\r\n");
-
         for (res.headers.list.toSlice()) |header| {
             try stream.print("{}: {}\r\n", header.name, header.value);
         }
@@ -187,9 +215,9 @@ pub const Server = struct {
             try stream.print("content-length: {}\r\n\r\n", body.len);
         }
 
-        try await (try async write(&server.loop, fd, buf_stream.buf.toSlice()));
+        try write(&server.loop, fd, buf_stream.buf.toSlice());
         if (!is_head) {
-            try await (try async write(&server.loop, fd, body));
+            try write(&server.loop, fd, body);
         }
     }
 
@@ -200,7 +228,7 @@ pub const Server = struct {
             .iov_len = buffer.len,
         };
         const iovs: *const [1]os.iovec_const = &iov;
-        return await (async net.writevPosix(loop, fd, iovs, 1) catch unreachable);
+        return net.writevPosix(loop, fd, iovs, 1);
     }
 
     fn defaultErrorHandler(err: anyerror, req: Request, res: Response) !void {

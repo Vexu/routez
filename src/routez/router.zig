@@ -16,6 +16,7 @@ pub const ErrorHandler = struct {
 };
 
 // todo include error handlers and other middleware in routes
+// https://github.com/ziglang/zig/issues/208 will improve this
 pub fn Router(comptime routes: []Route, comptime err_handlers: ?[]ErrorHandler) HandlerFn {
     if (routes.len == 0) {
         @compileError("Router must have at least one route");
