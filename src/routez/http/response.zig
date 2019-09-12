@@ -6,12 +6,10 @@ usingnamespace @import("common.zig");
 pub const Response = struct {
     status_code: StatusCode,
     headers: Headers,
-    body: OutStream,
+    body: std.io.BufferOutStream,
 
     /// arena allocator that frees everything when response has been sent
-    pub fn allocator(res: *Response) *std.mem.Allocator {
-        return res.headers.list.allocator;
-    }
+    allocator: *std.mem.Allocator,
 
     pub fn setType(res: *Response, mimetype: []const u8) !void {}
 
@@ -41,25 +39,5 @@ pub const Response = struct {
     pub fn print(res: *Response, comptime format: []const u8, args: ...) !void {
         try res.headers.put("content-type", mime.html);
         try res.body.stream.print(format, args);
-    }
-};
-
-pub const OutStream = struct {
-    buf: std.ArrayList(u8),
-    stream: Stream,
-
-    pub fn init(allocator: *std.mem.Allocator) OutStream {
-        return OutStream{
-            .buf = std.ArrayList(u8).init(allocator),
-            .stream = Stream{ .writeFn = writeFn },
-        };
-    }
-
-    pub const Error = error{OutOfMemory};
-    pub const Stream = std.io.OutStream(Error);
-
-    fn writeFn(out_stream: *Stream, bytes: []const u8) Error!void {
-        const self = @fieldParentPtr(OutStream, "stream", out_stream);
-        return self.buf.appendSlice(bytes);
     }
 };

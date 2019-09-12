@@ -8,7 +8,7 @@ const Loop = std.event.Loop;
 const Address = std.net.Address;
 const File = std.fs.File;
 const net = std.event.net;
-const Stream = std.event.net.OutStream.Stream;
+const BufferOutStream = std.io.BufferOutStream;
 const time = std.time;
 const builtin = @import("builtin");
 const request = @import("http/request.zig");
@@ -26,36 +26,32 @@ pub const Server = struct {
     pub const Config = struct {
         multithreaded: bool = true,
         keepalive_time: u64 = 5000,
-        max_header_size: u32 = 80 * 1024,
+        max_request_size: u32 = 1024 * 1024,
+        stack_size: usize = 4 * 1024 * 1024,
     };
 
-    pub const Session = struct {
+    pub const Context = struct {
+        stack: []u8,
         buf: []u8,
-        index: usize,
-        count: usize,
+        index: usize = 0,
+        count: usize = 0,
         socket: os.fd_t,
-        connection: Connection,
-        upgrade: Upgrade,
-        state: State,
-        last_message: u64,
         server: *Server,
 
-        const Upgrade = enum {
-            WebSocket,
-            Http2,
-            Unknown,
-            None,
-        };
+        pub fn init(server: *Server, socket: os.fd_t) !Context {
+            return Context {
+                .stack = try server.allocator.alloc(u8, server.config.stack_size),
+                .buf = try server.allocator.alloc(u8, server.config.max_request_size),
+                .socket = socket,
+                .server = server,
+            };
+        }
+    };
 
-        const Connection = enum {
-            Close,
-            KeepAlive,
-        };
-
-        const State = enum {
-            Message,
-            KeepAlive,
-        };
+    const Upgrade = enum {
+        WebSocket,
+        Http2,
+        None,
     };
 
     pub fn init(s: *Server, allocator: *Allocator, config: Config, comptime routes: []Route, comptime err_handlers: ?[]ErrorHandler) !void {
@@ -102,107 +98,80 @@ pub const Server = struct {
         defer self.loop.linuxRemoveFd(socket.handle);
         defer socket.close();
 
-        var s = Session{
-            .buf = undefined,
-            .index = 0,
-            .count = 0,
-            .socket = socket.handle,
-            .connection = .KeepAlive,
-            .upgrade = .None,
-            .state = .Message,
-            .last_message = 0,
+        var ctx = Context.init() catch {
+            std.debug.warn("could not handle request: Out of memory");
+            return;
         };
 
-        s.buf = self.allocator.alloc(u8, 1024) catch return;
-        defer self.allocator.free(s.buf);
+        const up = handleHttp(&ctx) catch |e| {
+            std.debug.warn("error in http handler: {}", e);
+            return;
+        };
 
-        var socket_in = net.InStream.init(&self.loop, socket.handle);
-        var stream = &socket_in.stream;
-        var read: usize = undefined;
-
-        var handle = async handleHttpRequest(self, &s);
-
-        // TODO connection upgrade
-        while (true) {
-            if (s.count >= s.buf.len) {
-                // todo improve
-                if (s.buf.len * 2 > self.config.max_header_size) {
-                    return;
-                }
-                s.buf = self.allocator.realloc(s.buf, s.buf.len * 2) catch return;
-            }
-            read = stream.read(s.buf[s.count..]) catch {
-                // todo probably incorrect way to handle this
-                return;
-            };
-            if (read != 0) {
-                s.state = .Message;
-            }
-            s.count += read;
-            switch (s.state) {
-                .Message => {
-                    resume handle;
-                },
-                .KeepAlive => {
-                    if (s.connection != .KeepAlive) {
-                        return;
-                    }
-                    // resume other operations, return when keepalive_time reached
-                    suspend;
-                    // if (time.timestamp() - s.last_message > self.config.keepalive_time) {
-                    //     return;
-                    // }
-                },
-            }
+        switch (up) {
+            .WebSocket => {
+                // handleWs(self, socket.handle) catch |e| {};
+            },
+            .Http2 => {},
+            .None => {},
         }
     }
 
-    async fn handleHttpRequest(server: *Server, s: *Session) !void {
-        suspend;
-
-        var out_stream = response.OutStream.init(server.allocator);
+    async fn handleHttp(ctx: *Context) !Upgrade {
+        var out_stream = BufferOutStream.init(ctx.server.allocator);
         defer out_stream.buf.deinit();
 
         // for use in headers and allocations in handlers
-        var arena = ArenaAllocator.init(server.allocator);
+        var arena = ArenaAllocator.init(ctx.server.allocator);
         defer arena.deinit();
 
-        defer s.count = 0;
-        defer s.index = 0;
-        defer s.last_message = time.timestamp();
-        defer s.state = .KeepAlive;
-        defer s.handle = null;
-
-        var req = request.Request{
-            .method = "",
-            .headers = Headers.init(&arena.allocator),
-            .path = "",
-            .query = "",
-            .body = "",
-            .version = .Http11,
-        };
-        var res = response.Response{
-            .status_code = undefined,
-            .headers = Headers.init(&arena.allocator),
-            .body = out_stream,
-        };
-
-        if (request.Request.parse(&req, s)) {
-            server.handler(&req, &res) catch |e| {
-                try defaultErrorHandler(e, &req, &res);
+        while (true) {
+            var req = request.Request{
+                .method = "",
+                .headers = Headers.init(&arena.allocator),
+                .path = "",
+                .query = "",
+                .body = "",
+                .version = .Http11,
             };
-        } else |e| try defaultErrorHandler(e, &req, &res);
-        return writeResponse(server, s.socket, &req, &res);
+            var res = response.Response{
+                .status_code = undefined,
+                .headers = Headers.init(&arena.allocator),
+                .body = out_stream,
+                .allocator = &arena.allocator,
+            };
+
+            if (request.Request.parse(&req, &ctx)) {
+                @newStackCall(ctx.buf, ctx.server.handler, &req, &res) catch |e| {
+                    try defaultErrorHandler(e, &req, &res);
+                };
+            } else |e| {
+                try defaultErrorHandler(e, &req, &res);
+                try writeResponse(ctx.server, ctx.socket, &req, &res);
+                return .None;
+            }
+
+            writeResponse(ctx.server, ctx.socket, &req, &res);
+
+            // reset for next request
+            arena.deinit();
+            arena.init(ctx.server.allocator);
+            out_stream.buffer.resize(0);
+            // TODO keepalive here
+            return .None;
+        }
+        return .None;
     }
 
     fn writeResponse(server: *Server, fd: os.fd_t, req: Request, res: Response) !void {
-        const body = res.body.buf.toSlice();
+        const body = res.body.buffer.toSlice();
         const is_head = mem.eql(u8, req.method, Method.Head);
 
-        var buf_stream = response.OutStream.init(server.allocator);
-        try buf_stream.buf.ensureCapacity(512);
-        defer buf_stream.buf.deinit();
-        var stream = &buf_stream.stream;
+        // TODO bufferedOutStream
+        // var out_stream = OutStream.init(&server.loop, fd);
+        // var buf_stream = std.io.BufferedOutStream(anyerror).init()
+        // // defer buf_stream.buf.deinit();
+        // var stream = &buf_stream.stream;
 
         try stream.print("{} {} {}\r\n", req.version.toString(), @enumToInt(res.status_code), res.status_code.toString());
 
