@@ -31,7 +31,7 @@ pub const Server = struct {
     };
 
     pub const Context = struct {
-        stack: []u8,
+        stack: []align(16) u8,
         buf: []u8,
         index: usize = 0,
         count: usize = 0,
@@ -40,7 +40,7 @@ pub const Server = struct {
 
         pub fn init(server: *Server, socket: os.fd_t) !Context {
             return Context {
-                .stack = try server.allocator.alloc(u8, server.config.stack_size),
+                .stack = try server.allocator.alignedAlloc(u8, 16, server.config.stack_size),
                 .buf = try server.allocator.alloc(u8, server.config.max_request_size),
                 .socket = socket,
                 .server = server,
@@ -85,20 +85,9 @@ pub const Server = struct {
 
     pub async fn handleRequest(server: *TcpServer, addr: *const std.net.Address, socket: File) void {
         const self = @fieldParentPtr(Server, "server", server);
-        self.loop.linuxWait(
-            socket.handle,
-            Loop.ResumeNode{
-                .id = .Basic,
-                .handle = @frame(),
-                .overlapped = Loop.ResumeNode.overlapped_init,
-            },
-            // TODO correct flags?
-            os.EPOLLIN | os.EPOLLPRI | os.EPOLLERR | os.EPOLLHUP,
-        );
-        defer self.loop.linuxRemoveFd(socket.handle);
         defer socket.close();
 
-        var ctx = Context.init() catch {
+        var ctx = Context.init(self, socket.handle) catch {
             std.debug.warn("could not handle request: Out of memory");
             return;
         };
@@ -118,8 +107,9 @@ pub const Server = struct {
     }
 
     async fn handleHttp(ctx: *Context) !Upgrade {
-        var out_stream = BufferOutStream.init(ctx.server.allocator);
-        defer out_stream.buf.deinit();
+        var buf = try std.Buffer.initSize(ctx.server.allocator, 0);
+        defer buf.deinit();
+        var out_stream = BufferOutStream.init(&buf);
 
         // for use in headers and allocations in handlers
         var arena = ArenaAllocator.init(ctx.server.allocator);
@@ -141,8 +131,8 @@ pub const Server = struct {
                 .allocator = &arena.allocator,
             };
 
-            if (request.Request.parse(&req, &ctx)) {
-                @newStackCall(ctx.buf, ctx.server.handler, &req, &res) catch |e| {
+            if (request.Request.parse(&req, ctx)) {
+                @newStackCall(ctx.stack, ctx.server.handler, &req, &res) catch |e| {
                     try defaultErrorHandler(e, &req, &res);
                 };
             } else |e| {
@@ -151,12 +141,12 @@ pub const Server = struct {
                 return .None;
             }
 
-            writeResponse(ctx.server, ctx.socket, &req, &res);
+            try writeResponse(ctx.server, ctx.socket, &req, &res);
 
             // reset for next request
             arena.deinit();
-            arena.init(ctx.server.allocator);
-            out_stream.buffer.resize(0);
+            arena = ArenaAllocator.init(ctx.server.allocator);
+            try buf.resize(0);
             // TODO keepalive here
             return .None;
         }

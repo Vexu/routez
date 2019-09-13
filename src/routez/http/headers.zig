@@ -97,8 +97,7 @@ pub const Headers = struct {
     }
 
     pub fn put(h: *Headers, name: []const u8, value: []const u8) Error!void {
-        const new = try h.list.addOne();
-        new.* = try Header.from(h.list.allocator, name, value);
+        try h.list.append(try Header.from(h.list.allocator, name, value));
     }
 
     pub fn parse(h: *Headers, ctx: *Context) Error!void {

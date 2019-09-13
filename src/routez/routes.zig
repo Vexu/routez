@@ -178,15 +178,8 @@ test "index" {
         .body = undefined,
         .version = .Http11,
     };
-    var res = try alloc.create(response);
-    defer alloc.destroy(res);
-    res.* = response{
-        .status_code = .InternalServerError,
-        .headers = undefined,
-        .body = undefined,
-        .allocator = undefined,
-    };
-    try handler(&req, res);
+    var res: response = undefined;
+    try handler(&req, &res);
     assert(res.status_code == .Ok);
 }
 
@@ -205,16 +198,9 @@ test "args" {
         .body = undefined,
         .version = .Http11,
     };
-    var res = try alloc.create(response);
-    defer alloc.destroy(res);
-    res.* = response{
-        .status_code = .InternalServerError,
-        .headers = undefined,
-        .body = undefined,
-        .allocator = undefined,
-    };
+    var res: response = undefined;
 
-    try handler(&req, res);
+    try handler(&req, &res);
 }
 
 fn argHandler(req: Request, res: Response, args: *const struct {
@@ -234,12 +220,7 @@ test "delim string" {
         .body = undefined,
         .version = .Http11,
     };
-    var res = response{
-        .status_code = .Processing,
-        .headers = undefined,
-        .body = undefined,
-        .allocator = undefined,
-    };
+    var res: response = undefined;
 
     try handler(&req, &res);
 }
@@ -261,12 +242,7 @@ test "subRoute" {
         .version = .Http11,
         .headers = undefined,
     };
-    var res = response{
-        .status_code = .Processing,
-        .headers = undefined,
-        .body = undefined,
-        .allocator = undefined,
-    };
+    var res: response = undefined;
 
     try handler(&req, &res);
     assert(res.status_code == .Ok);
@@ -286,7 +262,7 @@ test "static files" {
         .version = .Http11,
         .headers = undefined,
     };
-    var buf = try std.Buffer.init(alloc,"");
+    var buf = try std.Buffer.initSize(alloc, 0);
     defer buf.deinit();
     var res = response{
         .status_code = .Processing,
@@ -296,7 +272,10 @@ test "static files" {
     };
 
     // ignore file not found error
-    handler(&req, &res) catch return;
+    handler(&req, &res) catch |e| switch (e) {
+        error.FileNotFound => return,
+        else => return e,   
+    };
     assert(std.mem.eql(u8, (try res.headers.get(alloc, "content-type")).?[0].value, "text/plain;charset=UTF-8"));
     assert(std.mem.eql(u8, res.body.buffer.toSlice(), "Some text\n"));
 }
@@ -312,12 +291,7 @@ test "optional char" {
         .body = undefined,
         .version = .Http11,
     };
-    var res = response{
-        .status_code = .Processing,
-        .headers = undefined,
-        .body = undefined,
-        .allocator = undefined,
-    };
+    var res: response = undefined;
     try handler(&req, &res);
     assert(res.status_code == .Ok);
 }

@@ -160,7 +160,7 @@ pub const Request = struct {
 const alloc = std.heap.direct_allocator;
 
 /// for testing, normally all memory is freed when the arena allocator is freed
-pub fn deinit(req: *Request) void {
+fn deinit(req: *Request) void {
     req.headers.list.allocator.free(req.path);
     req.headers.deinit();
 }
