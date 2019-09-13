@@ -3,7 +3,7 @@ const Address = std.net.Address;
 usingnamespace @import("routez");
 
 pub fn main() !void {
-    var allocator = std.heap.direct_allocator;
+    const allocator = std.heap.direct_allocator;
 
     var server: Server = undefined;
     try server.init(
