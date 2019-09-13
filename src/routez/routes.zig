@@ -149,7 +149,7 @@ pub fn static(local_path: []const u8, remote_path: ?[]const u8) Route {
         fn staticHandler(req: Request, res: Response, args: *const struct {
             path: []const u8,
         }) !void {
-            const allocator = res.allocator();
+            const allocator = res.allocator;
             const path = if (local_path[local_path.len - 1] == '/') local_path else local_path ++ "/";
             const full_path = try std.fs.path.join(allocator, [_][]const u8{ path, args.path });
 
@@ -184,6 +184,7 @@ test "index" {
         .status_code = .InternalServerError,
         .headers = undefined,
         .body = undefined,
+        .allocator = undefined,
     };
     try handler(&req, res);
     assert(res.status_code == .Ok);
@@ -210,6 +211,7 @@ test "args" {
         .status_code = .InternalServerError,
         .headers = undefined,
         .body = undefined,
+        .allocator = undefined,
     };
 
     try handler(&req, res);
@@ -236,6 +238,7 @@ test "delim string" {
         .status_code = .Processing,
         .headers = undefined,
         .body = undefined,
+        .allocator = undefined,
     };
 
     try handler(&req, &res);
@@ -262,6 +265,7 @@ test "subRoute" {
         .status_code = .Processing,
         .headers = undefined,
         .body = undefined,
+        .allocator = undefined,
     };
 
     try handler(&req, &res);
@@ -282,16 +286,19 @@ test "static files" {
         .version = .Http11,
         .headers = undefined,
     };
+    var buf = try std.Buffer.init(alloc,"");
+    defer buf.deinit();
     var res = response{
         .status_code = .Processing,
         .headers = Headers.init(alloc),
-        .body = @import("http/response.zig").OutStream.init(alloc),
+        .body = std.io.BufferOutStream.init(&buf),
+        .allocator = alloc,
     };
 
     // ignore file not found error
     handler(&req, &res) catch return;
     assert(std.mem.eql(u8, (try res.headers.get(alloc, "content-type")).?[0].value, "text/plain;charset=UTF-8"));
-    assert(std.mem.eql(u8, res.body.buf.toSlice(), "Some text\n"));
+    assert(std.mem.eql(u8, res.body.buffer.toSlice(), "Some text\n"));
 }
 
 test "optional char" {
@@ -309,6 +316,7 @@ test "optional char" {
         .status_code = .Processing,
         .headers = undefined,
         .body = undefined,
+        .allocator = undefined,
     };
     try handler(&req, &res);
     assert(res.status_code == .Ok);

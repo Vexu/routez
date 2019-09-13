@@ -19,8 +19,8 @@ pub const Response = struct {
         defer out_stream.file.close();
         const stream = &out_stream.stream;
 
-        const content = try stream.readAllAlloc(res.body.buf.allocator, 1024 * 1024);
-        defer res.body.buf.allocator.free(content);
+        const content = try stream.readAllAlloc(res.allocator, 1024 * 1024);
+        defer res.allocator.free(content);
         try res.body.stream.write(content);
 
         var mimetype: []const u8 = mime.text;

@@ -2,10 +2,10 @@ const std = @import("std");
 const mem = std.mem;
 const Allocator = mem.Allocator;
 const assert = std.debug.assert;
-const Stream = std.event.net.InStream.Stream;
 usingnamespace @import("headers.zig");
 usingnamespace @import("common.zig");
 usingnamespace @import("zuri");
+const Context = @import("../server.zig").Server.Context;
 
 pub const Request = struct {
     method: []const u8,
@@ -25,7 +25,7 @@ pub const Request = struct {
     } || Uri.Error || Headers.Error;
 
     // TODO streaming parser
-    pub fn parse(req: *Request, s: *Session) Error!void {
+    pub fn parse(req: *Request, ctx: *Context) Error!void {
         const State = enum {
             Method,
             Path,
@@ -40,71 +40,72 @@ pub const Request = struct {
         var state = State.Method;
         var begin: usize = 0;
 
-        while (true) : (s.index += 1) {
-            if (s.index >= s.count) {
-                if (s.count < s.buf.len) {
+        while (true) : (ctx.index += 1) {
+            if (ctx.index >= ctx.count) {
+                if (ctx.count <= ctx.buf.len) {
                     // message has been read in its entirety
                     if (state != .Body) {
                         // message did not end properly
                         return Error.TooShort; // todo this is incorrectly being returned
                     }
-                    req.body = s.buf[begin..s.index];
+                    req.body = ctx.buf[begin..ctx.index];
                     return;
-                } else
+                } else {
                     suspend;
+                }
             }
             if (state == .Body) {
-                s.index = s.count - 1;
+                ctx.index = ctx.count - 1;
                 continue;
             }
 
             switch (state) {
                 .Method => {
                     // todo should probably validate given chars
-                    if (s.buf[s.index] == ' ') { // Conditional jump or move depends on uninitialised value(s), possible problem
-                        if (s.index == 0) {
+                    if (ctx.buf[ctx.index] == ' ') { // Conditional jump or move depends on uninitialised value(s), possible problem
+                        if (ctx.index == 0) {
                             return Error.InvalidMethod;
                         }
-                        req.method = s.buf[0..s.index];
-                        begin = s.index + 1;
+                        req.method = ctx.buf[0..ctx.index];
+                        begin = ctx.index + 1;
                         state = .Path;
                     }
                 },
                 .Path => {
-                    if (s.buf[s.index] == ' ') {
-                        const uri = try Uri.parse(s.buf[begin..s.index], true);
+                    if (ctx.buf[ctx.index] == ' ') {
+                        const uri = try Uri.parse(ctx.buf[begin..ctx.index], true);
                         req.path = try Uri.collapsePath(req.headers.list.allocator, uri.path);
                         req.query = uri.query;
                         state = .Version;
-                        begin = s.index + 1;
-                    } else if (s.buf[begin] == '*') {
-                        req.path = s.buf[begin .. begin + 1];
+                        begin = ctx.index + 1;
+                    } else if (ctx.buf[begin] == '*') {
+                        req.path = ctx.buf[begin .. begin + 1];
                         state = .AfterPath;
                     }
                 },
                 .AfterPath => {
-                    if (s.buf[s.index] != ' ') {
+                    if (ctx.buf[ctx.index] != ' ') {
                         return Error.InvalidChar;
                     }
                     state = .Version;
-                    begin = s.index + 1;
+                    begin = ctx.index + 1;
                 },
                 .Version => {
                     // 8 for HTTP/X.X
-                    if (s.index - begin < 7) {
+                    if (ctx.index - begin < 7) {
                         continue;
                     }
-                    if (!mem.eql(u8, s.buf[begin .. begin + 5], "HTTP/") or s.buf[begin + 6] != '.') {
+                    if (!mem.eql(u8, ctx.buf[begin .. begin + 5], "HTTP/") or ctx.buf[begin + 6] != '.') {
                         return Error.InvalidVersion;
                     }
-                    switch (s.buf[begin + 5]) {
+                    switch (ctx.buf[begin + 5]) {
                         '0' => req.version = .Http09,
                         '1' => req.version = .Http10,
                         '2' => req.version = .Http20,
                         '3' => req.version = .Http30,
                         else => return Error.InvalidVersion,
                     }
-                    switch (s.buf[begin + 7]) {
+                    switch (ctx.buf[begin + 7]) {
                         '9' => if (req.version != .Http09) return Error.InvalidVersion,
                         '1' => if (req.version == .Http10) {
                             req.version = .Http11;
@@ -121,28 +122,31 @@ pub const Request = struct {
                     state = .Cr;
                 },
                 .Cr => {
-                    if (s.buf[s.index] != '\r') {
+                    if (ctx.buf[ctx.index] != '\r') {
                         return Error.Invalid;
                     }
                     state = .Lf;
                 },
                 .Lf => {
-                    if (s.buf[s.index] != '\n') {
+                    if (ctx.buf[ctx.index] != '\n') {
                         return Error.Invalid;
                     }
-                    s.index += 1;
-                    try await (try async req.headers.parse(s));
-                    if (s.index >= s.count) {
+                    ctx.index += 1;
+                    if (req.version == .Http09 and ctx.index == ctx.count) {
                         return;
                     }
-                    if (s.buf[s.index] == '\r') {
+                    try req.headers.parse(ctx);
+                    if (ctx.index >= ctx.count) {
+                        return;
+                    }
+                    if (ctx.buf[ctx.index] == '\r') {
                         state = .EmptyLine;
                     } else {
                         return Error.Invalid;
                     }
                 },
-                .EmptyLine => if (s.buf[s.index] == '\n') {
-                    begin = s.index + 1;
+                .EmptyLine => if (ctx.buf[ctx.index] == '\n') {
+                    begin = ctx.index + 1;
                     state = .Body;
                 } else {
                     return Error.Invalid;
@@ -164,16 +168,17 @@ pub fn deinit(req: *Request) void {
 test "HTTP/0.9" {
     var b = try mem.dupe(alloc, u8, "GET / HTTP/0.9\r\n");
     defer alloc.free(b);
-    var req = Request{
-        .method = undefined,
-        .headers = Headers.init(alloc),
-        .path = undefined,
-        .query = undefined,
-        .body = undefined,
-        .version = .Http11,
-    };
+    var req: Request = undefined;
+    req.headers = Headers.init(alloc);
     defer deinit(&req);
-    // try req.parse(&sess);
+    var ctx = Context{
+        .buf = b,
+        .count = b.len,
+        .stack = undefined,
+        .socket = undefined,
+        .server = undefined,
+    };
+    try noasync req.parse(&ctx);
     assert(mem.eql(u8, req.method, Method.Get));
     assert(mem.eql(u8, req.path, "/"));
     assert(req.version == .Http09);
@@ -187,15 +192,17 @@ test "HTTP/1.1" {
         " obs-fold\r\n" ++
         "\r\na body\n");
     defer alloc.free(b);
-    var req = Request{
-        .method = undefined,
-        .headers = Headers.init(alloc),
-        .path = undefined,
-        .query = undefined,
-        .body = undefined,
-        .version = .Http11,
+    var req: Request = undefined;
+    req.headers =  Headers.init(alloc);
+    defer deinit(&req);
+    var ctx = Context{
+        .buf = b,
+        .count = b.len,
+        .stack = undefined,
+        .socket = undefined,
+        .server = undefined,
     };
-    // try req.parse(&sess);
+    try noasync req.parse(&ctx);
     assert(mem.eql(u8, req.method, Method.Post));
     assert(mem.eql(u8, req.path, "/about"));
     assert(req.version == .Http11);
@@ -209,14 +216,15 @@ test "HTTP/1.1" {
 test "HTTP/3.0" {
     var b = try mem.dupe(alloc, u8, "POST /about HTTP/3.0\r\n\r\n");
     defer alloc.free(b);
-    var req = Request{
-        .method = undefined,
-        .headers = Headers.init(alloc),
-        .path = undefined,
-        .query = undefined,
-        .body = undefined,
-        .version = .Http11,
-    };
+    var req: Request = undefined;
+    req.headers =  Headers.init(alloc);
     defer deinit(&req);
-    // std.testing.expectError(error.UnsupportedVersion, req.parse(&sess));
+    var ctx = Context{
+        .buf = b,
+        .count = b.len,
+        .stack = undefined,
+        .socket = undefined,
+        .server = undefined,
+    };
+    std.testing.expectError(error.UnsupportedVersion, noasync req.parse(&ctx));
 }

@@ -3,6 +3,7 @@ const mem = std.mem;
 const assert = std.debug.assert;
 const Allocator = mem.Allocator;
 const ArrayList = std.ArrayList;
+const Context = @import("../server.zig").Server.Context;
 
 // TODO use std.http.Headers
 pub const Headers = struct {
@@ -34,9 +35,11 @@ pub const Headers = struct {
             }
             var i: usize = 0;
             for (value) |c| {
-                if (c < ' ' or c > '~') {
+                if (c == '\r' or c == '\n') {
+                    // obs-fold
+                } else if (c < ' ' or c > '~') {
                     return Error.InvalidChar;
-                } else if (c != '\r' and c != '\n') {
+                } else {
                     copy_value[i] = c;
                     i += 1;
                 }
@@ -98,7 +101,7 @@ pub const Headers = struct {
         new.* = try Header.from(h.list.allocator, name, value);
     }
 
-    pub fn parse(h: *Headers, s: *Session) Error!void {
+    pub fn parse(h: *Headers, ctx: *Context) Error!void {
         const State = enum {
             Start,
             Name,
@@ -109,23 +112,22 @@ pub const Headers = struct {
         };
 
         var state = State.Start;
-        var begin: usize = s.index;
+        var begin: usize = ctx.index;
         var name: []u8 = "";
         var header: *Header = undefined;
-        while (true) : (s.index += 1) {
-            if (s.index >= s.count) {
-                if (s.count < s.buf.len) {
+        while (true) : (ctx.index += 1) {
+            if (ctx.index >= ctx.count) {
+                if (ctx.count <= ctx.buf.len) {
                     // message ended, error if state is incorrect
                     if (state == .AfterCr) {
-                        header = try h.list.addOne();
-                        header.* = try Header.from(h.list.allocator, name, s.buf[begin .. s.index - 2]);
+                        try h.list.append(try Header.from(h.list.allocator, name, ctx.buf[begin .. ctx.index - 2]));
                         return;
                     } else return Error.InvalidHeader;
                 }
                 suspend;
             }
 
-            const c = s.buf[s.index];
+            const c = ctx.buf[ctx.index];
             switch (state) {
                 .Start => {
                     switch (c) {
@@ -141,7 +143,7 @@ pub const Headers = struct {
                         'a'...'z', 'A'...'Z', '0'...'9', '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '/', '^', '_', '`', '|', '~' => {},
                         ':' => {
                             state = .AfterName;
-                            name = s.buf[begin..s.index];
+                            name = ctx.buf[begin..ctx.index];
                         },
                         else => return Error.InvalidChar,
                     }
@@ -150,7 +152,7 @@ pub const Headers = struct {
                     if (c < ' ' or c > '~') {
                         return Error.InvalidChar;
                     } else if (c != ' ' and c != '\t') {
-                        begin = s.index;
+                        begin = ctx.index;
                         state = .Value;
                     }
                 },
@@ -173,14 +175,13 @@ pub const Headers = struct {
                             state = .Value;
                         },
                         'a'...'z', 'A'...'Z', '0'...'9', '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '/', '^', '_', '`', '|', '~', '\r' => {
-                            header = try h.list.addOne();
-                            header.* = try Header.from(h.list.allocator, name, s.buf[begin .. s.index - 2]);
+                            try h.list.append(try Header.from(h.list.allocator, name, ctx.buf[begin .. ctx.index - 2]));
 
                             if (c == '\r') {
                                 return;
                             }
                             state = State.Name;
-                            begin = s.index;
+                            begin = ctx.index;
                         },
                         else => return Error.InvalidChar,
                     }
@@ -204,21 +205,28 @@ test "parse" {
     defer alloc.free(b);
     var h = Headers.init(alloc);
     defer h.list.deinit();
-    // try h.parse(&sess);
+    var ctx = Context{
+        .buf = b,
+        .count = b.len,
+        .stack = undefined,
+        .socket = undefined,
+        .server = undefined,
+    };
+    try noasync h.parse(&ctx);
 
     var slice = h.list.toSlice();
-    // assert(mem.eql(u8, slice[0].name, "user-agent"));
-    // assert(mem.eql(u8, slice[0].value, "Mozilla/5.0 (X11; Linux x86_64; rv:67.0) Gecko/20100101 Firefox/67.0"));
-    // assert(mem.eql(u8, slice[1].name, "accept"));
-    // assert(mem.eql(u8, slice[1].value, "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"));
-    // assert(mem.eql(u8, slice[2].name, "accept-language"));
-    // assert(mem.eql(u8, slice[2].value, "en-US,en;q=0.5"));
-    // assert(mem.eql(u8, slice[3].name, "accept-encoding"));
-    // assert(mem.eql(u8, slice[3].value, "gzip, deflate"));
-    // assert(mem.eql(u8, slice[4].name, "dnt"));
-    // assert(mem.eql(u8, slice[4].value, "1"));
-    // assert(mem.eql(u8, slice[5].name, "connection"));
-    // assert(mem.eql(u8, slice[5].value, "keep-alive"));
-    // assert(mem.eql(u8, slice[6].name, "upgrade-insecure-requests"));
-    // assert(mem.eql(u8, slice[6].value, "1"));
+    assert(mem.eql(u8, slice[0].name, "user-agent"));
+    assert(mem.eql(u8, slice[0].value, "Mozilla/5.0 (X11; Linux x86_64; rv:67.0) Gecko/20100101 Firefox/67.0"));
+    assert(mem.eql(u8, slice[1].name, "accept"));
+    assert(mem.eql(u8, slice[1].value, "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"));
+    assert(mem.eql(u8, slice[2].name, "accept-language"));
+    assert(mem.eql(u8, slice[2].value, "en-US,en;q=0.5"));
+    assert(mem.eql(u8, slice[3].name, "accept-encoding"));
+    assert(mem.eql(u8, slice[3].value, "gzip, deflate"));
+    assert(mem.eql(u8, slice[4].name, "dnt"));
+    assert(mem.eql(u8, slice[4].value, "1"));
+    assert(mem.eql(u8, slice[5].name, "connection"));
+    assert(mem.eql(u8, slice[5].value, "keep-alive"));
+    assert(mem.eql(u8, slice[6].name, "upgrade-insecure-requests"));
+    assert(mem.eql(u8, slice[6].value, "1"));
 }
