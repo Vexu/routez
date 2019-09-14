@@ -13,6 +13,7 @@ const time = std.time;
 const builtin = @import("builtin");
 const request = @import("http/request.zig");
 const response = @import("http/response.zig");
+const parser = @import("http/parser.zig");
 usingnamespace @import("http.zig");
 usingnamespace @import("router.zig");
 
@@ -45,6 +46,12 @@ pub const Server = struct {
                 .socket = socket,
                 .server = server,
             };
+        }
+
+        pub fn read(ctx: *Context) !usize {
+            try ctx.server.loop.waitUntilFdReadable(ctx.socket);
+            ctx.count += try net.read(&ctx.server.loop, ctx.socket, ctx.buf[ctx.count..]);
+            return ctx.count;
         }
     };
 
@@ -83,7 +90,7 @@ pub const Server = struct {
         s.loop.deinit();
     }
 
-    pub async fn handleRequest(server: *TcpServer, addr: *const std.net.Address, socket: File) void {
+    async fn handleRequest(server: *TcpServer, addr: *const std.net.Address, socket: File) void {
         const self = @fieldParentPtr(Server, "server", server);
         defer socket.close();
 
@@ -93,7 +100,7 @@ pub const Server = struct {
         };
 
         const up = handleHttp(&ctx) catch |e| {
-            std.debug.warn("error in http handler: {}", e);
+            std.debug.warn("error in http handler: {}\n", e);
             return;
         };
 
@@ -132,7 +139,7 @@ pub const Server = struct {
                 .allocator = alloc,
             };
 
-            if (request.Request.parse(&req, ctx)) { // TODO request is never being read
+            if (parser.parse(&req, ctx)) {
                 @newStackCall(ctx.stack, ctx.server.handler, &req, &res) catch |e| {
                     try defaultErrorHandler(e, &req, &res);
                 };
@@ -148,6 +155,8 @@ pub const Server = struct {
             arena.deinit();
             arena = ArenaAllocator.init(ctx.server.allocator);
             buf.resize(0) catch unreachable;
+            ctx.count = 0;
+            ctx.index = 0;
             // TODO keepalive here
             return .None;
         }

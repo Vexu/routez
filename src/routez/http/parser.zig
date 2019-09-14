@@ -22,7 +22,7 @@ pub fn parse(req: *Request, ctx: *Context) !void {
         return error.NoPath;
     }
     req.path = ctx.buf[cur..ctx.index - 1];
-    if (!mem.eql(u8, req.path, "*")) {
+    if (!mem.eql(u8, req.path, "*") and req.path.len > 1) {
         const uri = try Uri.parse(req.path, true);
         req.path = try Uri.collapsePath(req.headers.list.allocator, uri.path);
         req.query = uri.query;
@@ -103,7 +103,7 @@ fn seek(ctx: *Context, c: u8) !bool {
 
 // index is after `c`
 fn expect(ctx: *Context, c: u8) !void {
-    if (ctx.count < ctx.index + 1) {
+    if (ctx.count < ctx.index + 2) {
         if ((try ctx.read()) == 0) {
             return error.UnexpectedEof;
         }
