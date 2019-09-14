@@ -11,4 +11,5 @@ test "http" {
     _ = @import("http/request.zig");
     _ = @import("http/response.zig");
     _ = @import("http/headers.zig");
+    _ = @import("http/parser.zig");
 }

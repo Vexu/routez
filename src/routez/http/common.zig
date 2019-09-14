@@ -1,3 +1,6 @@
+const std = @import("std");
+const mem = std.mem;
+
 pub const StatusCode = enum(u16) {
     // informational
     Continue = 100,
@@ -164,13 +167,24 @@ pub const Version = enum {
     Http20,
     Http30,
 
+    const vers = [_][]const u8 {
+        "HTTP/0.9",
+        "HTTP/1.0",
+        "HTTP/1.1",
+        "HTTP/2.0",
+        "HTTP/3.0",
+    };
+
     pub fn toString(self: Version) []const u8 {
-        return switch (self) {
-            .Http09 => "HTTP/0.9",
-            .Http10 => "HTTP/1.0",
-            .Http11 => "HTTP/1.1",
-            .Http20 => "HTTP/2.0",
-            .Http30 => "HTTP/3.0",
-        };
+        return vers[@enumToInt(self)];
+    }
+
+    pub fn fromString(str: []const u8) !Version {
+        for (vers) |v, i| {
+            if (mem.eql(u8, v, str)) {
+                return @intToEnum(Version, @truncate(u3, i));
+            }
+        }
+        return error.Unsupported;
     }
 };
