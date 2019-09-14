@@ -112,14 +112,14 @@ pub const Server = struct {
         var out_stream = BufferOutStream.init(&buf);
 
         // for use in headers and allocations in handlers
-        // var arena = ArenaAllocator.init(ctx.server.allocator); // segfaults
-        var arena = ArenaAllocator.init(std.heap.direct_allocator);
+        var arena = ArenaAllocator.init(ctx.server.allocator);
         defer arena.deinit();
+        const alloc = &arena.allocator;
 
         while (true) {
             var req = request.Request{
                 .method = "",
-                .headers = Headers.init(&arena.allocator),
+                .headers = Headers.init(alloc),
                 .path = "",
                 .query = "",
                 .body = "",
@@ -127,12 +127,12 @@ pub const Server = struct {
             };
             var res = response.Response{
                 .status_code = undefined,
-                .headers = Headers.init(&arena.allocator),
+                .headers = Headers.init(alloc),
                 .body = out_stream,
-                .allocator = &arena.allocator,
+                .allocator = alloc,
             };
 
-            if (request.Request.parse(&req, ctx)) {
+            if (request.Request.parse(&req, ctx)) { // TODO request is never being read
                 @newStackCall(ctx.stack, ctx.server.handler, &req, &res) catch |e| {
                     try defaultErrorHandler(e, &req, &res);
                 };
@@ -146,8 +146,7 @@ pub const Server = struct {
 
             // reset for next request
             arena.deinit();
-            // arena = ArenaAllocator.init(ctx.server.allocator); // segfaults
-            arena = ArenaAllocator.init(std.heap.direct_allocator);
+            arena = ArenaAllocator.init(ctx.server.allocator);
             buf.resize(0) catch unreachable;
             // TODO keepalive here
             return .None;
@@ -159,29 +158,23 @@ pub const Server = struct {
         const body = res.body.buffer.toSlice();
         const is_head = mem.eql(u8, req.method, Method.Head);
 
-        // This causes weird segfaults
         // TODO bufferedOutStream
-        // var buf = try std.Buffer.initSize(server.allocator, 1024*1024);
-        // defer buf.deinit();
-        // var stream = &std.io.BufferOutStream.init(&buf).stream;
+        var buf = try std.Buffer.initSize(server.allocator, 0);
+        defer buf.deinit();
+        var stream = &std.io.BufferOutStream.init(&buf).stream;
 
-        // try stream.print("{} {} {}\r\n", req.version.toString(), @enumToInt(res.status_code), res.status_code.toString());
+        try stream.print("{} {} {}\r\n", req.version.toString(), @enumToInt(res.status_code), res.status_code.toString());
 
-        // for (res.headers.list.toSlice()) |header| {
-        //     try stream.print("{}: {}\r\n", header.name, header.value);
-        // }
-        // if (is_head) {
-        //     try stream.write("content-length: 0\r\n\r\n");
-        // } else {
-        //     try stream.print("content-length: {}\r\n\r\n", body.len);
-        // }
+        for (res.headers.list.toSlice()) |header| {
+            try stream.print("{}: {}\r\n", header.name, header.value);
+        }
+        if (is_head) {
+            try stream.write("content-length: 0\r\n\r\n");
+        } else {
+            try stream.print("content-length: {}\r\n\r\n", body.len);
+        }
 
-        // try write(&server.loop, fd, buf.toSlice());
-        try write(&server.loop, fd, 
-            "HTTP/1.1 200 GET\r\n" ++
-            "content-length: 176\r\n" ++
-            "\r\n"
-        );
+        try write(&server.loop, fd, buf.toSlice());
         if (!is_head) {
             try write(&server.loop, fd, body);
         }
