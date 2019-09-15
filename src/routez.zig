@@ -11,17 +11,10 @@ pub const Route = r.Route;
 
 pub usingnamespace @import("routez/routes.zig");
 
-pub const version = struct {
-    pub const major = 0;
-    pub const minor = 0;
-    pub const patch = 0;
-    pub const string = "0.0.0";
-};
-
 test "routez" {
     _ = @import("routez/http.zig");
-    _ = @import("routez/router.zig");
-    _ = @import("routez/server.zig");
     _ = @import("routez/mime.zig");
+    _ = @import("routez/router.zig");
     _ = @import("routez/routes.zig");
+    _ = @import("routez/server.zig");
 }
