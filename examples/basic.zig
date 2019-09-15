@@ -1,9 +1,9 @@
 const std = @import("std");
 const Address = std.net.Address;
 usingnamespace @import("routez");
+const allocator = std.heap.direct_allocator;
 
 pub fn main() !void {
-    const allocator = std.heap.direct_allocator;
 
     var server: Server = undefined;
     try server.init(

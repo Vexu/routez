@@ -1,18 +1,16 @@
-# routez
-Http server with router for Zig
-
-On hold until coroutine rewrite is done
+# Routez
+HTTP server for Zig
 
 ## Example
 ### [basic](examples/basic.zig)
-build with ```./build_examples.sh``` and run with ```./zig-cache/basic```
+build with `./build_examples.sh` ([see #855](https://github.com/ziglang/zig/issues/855)) and run with `./zig-cache/basic`
 ```Zig
 const std = @import("std");
 const Address = std.net.Address;
 usingnamespace @import("routez");
+const allocator = std.heap.direct_allocator;
 
 pub fn main() !void {
-    var allocator = std.heap.direct_allocator;
 
     var server: Server = undefined;
     try server.init(
@@ -52,5 +50,4 @@ fn postHandler(req: Request, res: Response, args: *const struct {
     res.status_code = .Ok;
     try res.print("Hello from post, post_num is {}\n", args.post_num);
 }
-
 ```
