@@ -263,7 +263,7 @@ pub fn match(
                     if (number) {
                         @field(args, field_name) = getNum(field_type, path[path_index..], radix, &len);
                     } else {
-                        if (!comptime mem.eql(u8, delim, "")) {
+                        if (delim.len != 0) {
                             @field(args, field_name) = getString(path[path_index..], delim, &len);
                         } else {
                             @field(args, field_name) = path[path_index..];
@@ -373,14 +373,11 @@ fn getNum(comptime T: type, path: []const u8, radix: u8, len: *usize) T {
     return res;
 }
 
-fn getString(path: []const u8, comptime delim: []const u8, len: *usize) []const u8 {
-    if (delim.len == 0) {
-        @compileError("internal Error");
-    }
+fn getString(path: []const u8, delim: []const u8, len: *usize) []const u8 {
     for (path) |c, i| {
         var done = false;
 
-        inline for (delim) |d| {
+        for (delim) |d| {
             done = done or c == d;
         }
 

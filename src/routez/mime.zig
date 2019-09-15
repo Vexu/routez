@@ -20,6 +20,7 @@ const mimes = [_]Mime{
     Mime{ .extension = "wav", .mime = wav },
     Mime{ .extension = "ogg", .mime = ogg },
     Mime{ .extension = "webm", .mime = webm },
+    Mime{ .extension = "zig", .mime = text },
 };
 
 pub const js = "application/javascript;charset=UTF-8";
