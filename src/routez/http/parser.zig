@@ -14,18 +14,19 @@ pub fn parse(req: *Request, ctx: *Context) !void {
     if (!try seek(ctx, ' ')) {
         return error.NoMethod;
     }
-    req.method = ctx.buf[cur..ctx.index - 1];
+    req.method = ctx.buf[cur .. ctx.index - 1];
     cur = ctx.index;
 
     // path
     if (!try seek(ctx, ' ')) {
         return error.NoPath;
     }
-    req.path = ctx.buf[cur..ctx.index - 1];
-    if (!mem.eql(u8, req.path, "*") and req.path.len > 1) {
-        const uri = try Uri.parse(req.path, true);
+    if (req.path.len > 1) {
+        const uri = try Uri.parse(ctx.buf[cur .. ctx.index - 1], true);
         req.path = try Uri.collapsePath(req.headers.list.allocator, uri.path);
         req.query = uri.query;
+    } else {
+        req.path = try mem.dupe(req.headers.list.allocator, u8, ctx.buf[cur .. ctx.index - 1]);
     }
     cur = ctx.index;
 
@@ -33,7 +34,7 @@ pub fn parse(req: *Request, ctx: *Context) !void {
     if (!try seek(ctx, '\r')) {
         return error.NoVersion;
     }
-    req.version = try Version.fromString(ctx.buf[cur..ctx.index - 1]);
+    req.version = try Version.fromString(ctx.buf[cur .. ctx.index - 1]);
 
     if (req.version == .Http30) {
         return error.UnsupportedVersion;
@@ -50,8 +51,10 @@ pub fn parse(req: *Request, ctx: *Context) !void {
     try expect(ctx, '\n');
 
     // read to end
-    while ((try ctx.read()) != 0) {}
-    req.body = ctx.buf[ctx.index .. ctx.count];
+    if (!is_test) {
+        while ((try ctx.read()) != 0) {}
+    }
+    req.body = ctx.buf[ctx.index..ctx.count];
 }
 
 fn parseHeaders(h: *Headers, ctx: *Context) !void {
@@ -62,7 +65,7 @@ fn parseHeaders(h: *Headers, ctx: *Context) !void {
         if (!try seek(ctx, ':')) {
             return error.NoName;
         }
-        name = ctx.buf[cur..ctx.index - 1];
+        name = ctx.buf[cur .. ctx.index - 1];
         cur = ctx.index;
 
         if (!try seek(ctx, '\r')) {
@@ -104,7 +107,7 @@ fn seek(ctx: *Context, c: u8) !bool {
 // index is after `c`
 fn expect(ctx: *Context, c: u8) !void {
     if (ctx.count < ctx.index + 2) {
-        if ((try ctx.read()) == 0) {
+        if (!is_test and (try ctx.read()) == 0) {
             return error.UnexpectedEof;
         }
     }
@@ -116,6 +119,9 @@ fn expect(ctx: *Context, c: u8) !void {
 }
 
 const alloc = std.heap.direct_allocator;
+
+/// no event loop is available for tests
+const is_test = @import("builtin").is_test;
 
 test "parse headers" {
     var b = try mem.dupe(alloc, u8, "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:67.0) Gecko/20100101 Firefox/67.0\r\n" ++
