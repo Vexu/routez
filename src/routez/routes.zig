@@ -274,7 +274,7 @@ test "static files" {
     // ignore file not found error
     handler(&req, &res) catch |e| switch (e) {
         error.FileNotFound => return,
-        else => return e,   
+        else => return e,
     };
     assert(std.mem.eql(u8, (try res.headers.get(alloc, "content-type")).?[0].value, "text/plain;charset=UTF-8"));
     assert(std.mem.eql(u8, res.body.buffer.toSlice(), "Some text\n"));

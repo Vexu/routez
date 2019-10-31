@@ -3,9 +3,8 @@ const os = std.os;
 const mem = std.mem;
 const Allocator = mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
-const TcpServer = std.event.net.Server;
-const Loop = std.event.Loop;
-const Address = std.net.Address;
+const TcpServer = std.net.TcpServer;
+const IpAddress = std.net.IpAddress;
 const File = std.fs.File;
 const net = std.event.net;
 const BufferOutStream = std.io.BufferOutStream;
@@ -20,7 +19,6 @@ usingnamespace @import("router.zig");
 pub const Server = struct {
     server: TcpServer,
     handler: HandlerFn,
-    loop: Loop,
     allocator: *Allocator,
     config: Config,
 
@@ -36,22 +34,23 @@ pub const Server = struct {
         buf: []u8,
         index: usize = 0,
         count: usize = 0,
-        socket: os.fd_t,
+        out_stream: File.OutStream,
+        in_stream: File.InStream,
         server: *Server,
 
-        pub fn init(server: *Server, socket: os.fd_t) !Context {
-            return Context {
+        pub fn init(server: *Server, file: File) !Context {
+            return Context{
                 .stack = try server.allocator.alignedAlloc(u8, 16, server.config.stack_size),
                 .buf = try server.allocator.alloc(u8, server.config.max_request_size),
-                .socket = socket,
+                .out_stream = file.outStream(),
+                .in_stream = file.inStream(),
                 .server = server,
             };
         }
 
-        pub fn read(ctx: *Context) !usize {
-            try ctx.server.loop.waitUntilFdReadable(ctx.socket);
-            ctx.count += try net.read(&ctx.server.loop, ctx.socket, ctx.buf[ctx.count..]);
-            return ctx.count;
+        pub fn read(context: *Context) !usize {
+            context.count += try context.in_stream.stream.read(context.buf[context.count..]);
+            return context.count;
         }
     };
 
@@ -61,40 +60,29 @@ pub const Server = struct {
         None,
     };
 
-    pub fn init(s: *Server, allocator: *Allocator, config: Config, comptime routes: []Route, comptime err_handlers: ?[]ErrorHandler) !void {
-        const loop_init = if (config.multithreaded) Loop.initMultiThreaded else Loop.initSingleThreaded;
-
-        s.handler = Router(routes, err_handlers);
-        s.allocator = allocator;
-        try loop_init(&s.loop, allocator);
-        s.server = TcpServer.init(&s.loop);
-        s.config = config;
-    }
-
-    pub fn listen(server: *Server, address: *Address) void {
-        errdefer server.deinit();
-        errdefer server.loop.deinit();
-        server.server.listen(address, handleRequest) catch |e| {
-            std.debug.warn("{}\n", e);
-            os.abort();
+    pub fn init(allocator: *Allocator, config: Config, comptime routes: []Route, comptime err_handlers: ?[]ErrorHandler) Server {
+        return Server{
+            .server = TcpServer.init(TcpServer.Options{}),
+            .handler = Router(routes, err_handlers),
+            .allocator = allocator,
+            .config = config,
         };
-        server.loop.run();
     }
 
-    pub fn close(s: *Server) void {
-        s.server.close();
+    pub fn listen(server: *Server, address: IpAddress) !void {
+        defer server.server.deinit();
+        try server.server.listen(address);
+
+        while (true) {
+            var client_file = try server.server.accept();
+            _ = async handleRequest(server, client_file);
+        }
     }
 
-    pub fn deinit(s: *Server) void {
-        s.server.deinit();
-        s.loop.deinit();
-    }
+    async fn handleRequest(server: *Server, file: File) void {
+        defer file.close();
 
-    async fn handleRequest(server: *TcpServer, addr: *const std.net.Address, socket: File) void {
-        const self = @fieldParentPtr(Server, "server", server);
-        defer socket.close();
-
-        var ctx = Context.init(self, socket.handle) catch {
+        var ctx = Context.init(server, file) catch {
             std.debug.warn("could not handle request: Out of memory");
             return;
         };
@@ -145,11 +133,11 @@ pub const Server = struct {
                 };
             } else |e| {
                 try defaultErrorHandler(e, &req, &res);
-                try writeResponse(ctx.server, ctx.socket, &req, &res);
+                try writeResponse(ctx.server, &ctx.out_stream.stream, &req, &res);
                 return .None;
             }
 
-            try writeResponse(ctx.server, ctx.socket, &req, &res);
+            try writeResponse(ctx.server, &ctx.out_stream.stream, &req, &res);
 
             // reset for next request
             arena.deinit();
@@ -163,14 +151,9 @@ pub const Server = struct {
         return .None;
     }
 
-    fn writeResponse(server: *Server, fd: os.fd_t, req: Request, res: Response) !void {
+    fn writeResponse(server: *Server, stream: *File.OutStream.Stream, req: Request, res: Response) !void {
         const body = res.body.buffer.toSlice();
         const is_head = mem.eql(u8, req.method, Method.Head);
-
-        // TODO bufferedOutStream
-        var buf = try std.Buffer.initSize(server.allocator, 0);
-        defer buf.deinit();
-        var stream = &std.io.BufferOutStream.init(&buf).stream;
 
         try stream.print("{} {} {}\r\n", req.version.toString(), @enumToInt(res.status_code), res.status_code.toString());
 
@@ -183,20 +166,9 @@ pub const Server = struct {
             try stream.print("content-length: {}\r\n\r\n", body.len);
         }
 
-        try write(&server.loop, fd, buf.toSlice());
         if (!is_head) {
-            try write(&server.loop, fd, body);
+            try stream.write(body);
         }
-    }
-
-    // copied from std.event.net with proper error values
-    async fn write(loop: *Loop, fd: os.fd_t, buffer: []const u8) !void {
-        const iov = os.iovec_const{
-            .iov_base = buffer.ptr,
-            .iov_len = buffer.len,
-        };
-        const iovs: *const [1]os.iovec_const = &iov;
-        return net.writevPosix(loop, fd, iovs, 1);
     }
 
     fn defaultErrorHandler(err: anyerror, req: Request, res: Response) !void {

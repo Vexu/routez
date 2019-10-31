@@ -99,4 +99,3 @@ pub const Headers = struct {
         try h.list.append(try Header.from(h.list.allocator, name, value));
     }
 };
-

@@ -1,12 +1,11 @@
 const std = @import("std");
-const Address = std.net.Address;
+const IpAddress = std.net.IpAddress;
 usingnamespace @import("routez");
 const allocator = std.heap.direct_allocator;
 
 pub fn main() !void {
 
-    var server: Server = undefined;
-    try server.init(
+    var server = Server.init(
         allocator,
         Server.Config{},
         &[_]Route{
@@ -18,8 +17,8 @@ pub fn main() !void {
         },
         null,
     );
-    var addr = Address.initIp4(try std.net.parseIp4("127.0.0.1"), 8080);
-    server.listen(&addr);
+    var addr = try IpAddress.parse("127.0.0.1", 8080);
+    try server.listen(addr);
 }
 
 fn indexHandler(req: Request, res: Response) !void {

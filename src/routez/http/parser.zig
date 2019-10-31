@@ -138,7 +138,8 @@ test "parse headers" {
         .buf = b,
         .count = b.len,
         .stack = undefined,
-        .socket = undefined,
+        .in_stream = undefined,
+        .out_stream = undefined,
         .server = undefined,
     };
     try noasync parseHeaders(&h, &ctx);
@@ -176,7 +177,8 @@ test "HTTP/0.9" {
         .buf = b,
         .count = b.len,
         .stack = undefined,
-        .socket = undefined,
+        .in_stream = undefined,
+        .out_stream = undefined,
         .server = undefined,
     };
     try noasync parse(&req, &ctx);
@@ -200,7 +202,8 @@ test "HTTP/1.1" {
         .buf = b,
         .count = b.len,
         .stack = undefined,
-        .socket = undefined,
+        .in_stream = undefined,
+        .out_stream = undefined,
         .server = undefined,
     };
     try noasync parse(&req, &ctx);
@@ -224,7 +227,8 @@ test "HTTP/3.0" {
         .buf = b,
         .count = b.len,
         .stack = undefined,
-        .socket = undefined,
+        .in_stream = undefined,
+        .out_stream = undefined,
         .server = undefined,
     };
     std.testing.expectError(error.UnsupportedVersion, noasync parse(&req, &ctx));

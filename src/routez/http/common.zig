@@ -167,7 +167,7 @@ pub const Version = enum {
     Http20,
     Http30,
 
-    const vers = [_][]const u8 {
+    const vers = [_][]const u8{
         "HTTP/0.9",
         "HTTP/1.0",
         "HTTP/1.1",
