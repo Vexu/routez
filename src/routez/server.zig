@@ -1,14 +1,11 @@
 const std = @import("std");
-const os = std.os;
 const mem = std.mem;
 const Allocator = mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 const TcpServer = std.net.TcpServer;
 const IpAddress = std.net.IpAddress;
 const File = std.fs.File;
-const net = std.event.net;
 const BufferOutStream = std.io.BufferOutStream;
-const time = std.time;
 const builtin = @import("builtin");
 const request = @import("http/request.zig");
 const response = @import("http/response.zig");
@@ -35,22 +32,45 @@ pub const Server = struct {
         index: usize = 0,
         count: usize = 0,
         out_stream: File.OutStream,
-        in_stream: File.InStream,
         server: *Server,
+        file: File,
 
-        pub fn init(server: *Server, file: File) !Context {
-            return Context{
-                .stack = try server.allocator.alignedAlloc(u8, 16, server.config.stack_size),
-                .buf = try server.allocator.alloc(u8, server.config.max_request_size),
+        frame: @Frame(handleRequest),
+
+        pub fn init(server: *Server, file: File) !*Context {
+            var ctx = try server.allocator.create(Context);
+            errdefer server.allocator.destroy(ctx);
+
+            var stack = try server.allocator.alignedAlloc(u8, 16, server.config.stack_size);
+            errdefer server.allocator.free(stack);
+
+            var buf = try server.allocator.alloc(u8, server.config.max_request_size);
+            errdefer server.allocator.free(buf);
+
+            ctx.* = Context{
+                .stack = stack,
+                .buf = buf,
                 .out_stream = file.outStream(),
-                .in_stream = file.inStream(),
                 .server = server,
+                .file = file,
+                .frame = undefined,
             };
+
+            return ctx;
+        }
+
+        pub fn deinit(context: *Context) void {
+            await context.frame;
+            context.file.close();
+            context.server.allocator.free(context.stack);
+            context.server.allocator.free(context.buf);
+            context.server.allocator.destroy(context);
         }
 
         pub fn read(context: *Context) !usize {
-            context.count += try context.in_stream.stream.read(context.buf[context.count..]);
-            return context.count;
+            const count = try context.file.read(context.buf[context.count..]);
+            context.count += count;
+            return count;
         }
     };
 
@@ -75,19 +95,17 @@ pub const Server = struct {
 
         while (true) {
             var client_file = try server.server.accept();
-            _ = async handleRequest(server, client_file);
+            var context = try Context.init(server, client_file);
+            errdefer context.deinit();
+
+            context.frame = async handleRequest(context);
         }
     }
 
-    async fn handleRequest(server: *Server, file: File) void {
-        defer file.close();
+    async fn handleRequest(context: *Context) void {
+        defer context.deinit();
 
-        var ctx = Context.init(server, file) catch {
-            std.debug.warn("could not handle request: Out of memory");
-            return;
-        };
-
-        const up = handleHttp(&ctx) catch |e| {
+        const up = handleHttp(context) catch |e| {
             std.debug.warn("error in http handler: {}\n", e);
             return;
         };

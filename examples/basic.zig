@@ -3,8 +3,9 @@ const IpAddress = std.net.IpAddress;
 usingnamespace @import("routez");
 const allocator = std.heap.direct_allocator;
 
-pub fn main() !void {
+pub const io_mode = .evented;
 
+pub fn main() !void {
     var server = Server.init(
         allocator,
         Server.Config{},
