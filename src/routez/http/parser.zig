@@ -23,7 +23,7 @@ pub fn parse(req: *Request, ctx: *Context) !void {
     }
     if (req.path.len > 1) {
         const uri = try Uri.parse(ctx.buf[cur .. ctx.index - 1], true);
-        req.path = try Uri.collapsePath(req.headers.list.allocator, uri.path);
+        req.path = try Uri.resolvePath(req.headers.list.allocator, uri.path);
         req.query = uri.query;
     } else {
         req.path = try mem.dupe(req.headers.list.allocator, u8, ctx.buf[cur .. ctx.index - 1]);
@@ -106,7 +106,7 @@ fn seek(ctx: *Context, c: u8) !bool {
 
 // index is after `c`
 fn expect(ctx: *Context, c: u8) !void {
-    if (ctx.count < ctx.index + 2) {
+    if (ctx.count < ctx.index + 1) {
         if (!is_test and (try ctx.read()) == 0) {
             return error.UnexpectedEof;
         }
@@ -138,9 +138,10 @@ test "parse headers" {
         .buf = b,
         .count = b.len,
         .stack = undefined,
-        .in_stream = undefined,
         .out_stream = undefined,
         .server = undefined,
+        .file = undefined,
+        .frame = undefined,
     };
     try noasync parseHeaders(&h, &ctx);
 
@@ -177,9 +178,10 @@ test "HTTP/0.9" {
         .buf = b,
         .count = b.len,
         .stack = undefined,
-        .in_stream = undefined,
         .out_stream = undefined,
         .server = undefined,
+        .file = undefined,
+        .frame = undefined,
     };
     try noasync parse(&req, &ctx);
     assert(mem.eql(u8, req.method, Method.Get));
@@ -202,9 +204,10 @@ test "HTTP/1.1" {
         .buf = b,
         .count = b.len,
         .stack = undefined,
-        .in_stream = undefined,
         .out_stream = undefined,
         .server = undefined,
+        .file = undefined,
+        .frame = undefined,
     };
     try noasync parse(&req, &ctx);
     assert(mem.eql(u8, req.method, Method.Post));
@@ -227,9 +230,10 @@ test "HTTP/3.0" {
         .buf = b,
         .count = b.len,
         .stack = undefined,
-        .in_stream = undefined,
         .out_stream = undefined,
         .server = undefined,
+        .file = undefined,
+        .frame = undefined,
     };
     std.testing.expectError(error.UnsupportedVersion, noasync parse(&req, &ctx));
 }

@@ -6,7 +6,7 @@ HTTP server for Zig
 build with `./build_examples.sh` ([see #855](https://github.com/ziglang/zig/issues/855)) and run with `./zig-cache/basic`
 ```Zig
 const std = @import("std");
-const IpAddress = std.net.IpAddress;
+const Address = std.net.Address;
 usingnamespace @import("routez");
 const allocator = std.heap.direct_allocator;
 
@@ -25,7 +25,7 @@ pub fn main() !void {
         },
         null,
     );
-    var addr = try IpAddress.parse("127.0.0.1", 8080);
+    var addr = try Address.parseIp("127.0.0.1", 8080);
     try server.listen(addr);
 }
 

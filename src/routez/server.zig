@@ -2,8 +2,8 @@ const std = @import("std");
 const mem = std.mem;
 const Allocator = mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
-const TcpServer = std.net.TcpServer;
-const IpAddress = std.net.IpAddress;
+const StreamServer = std.net.StreamServer;
+const Address = std.net.Address;
 const File = std.fs.File;
 const BufferOutStream = std.io.BufferOutStream;
 const builtin = @import("builtin");
@@ -14,7 +14,7 @@ usingnamespace @import("http.zig");
 usingnamespace @import("router.zig");
 
 pub const Server = struct {
-    server: TcpServer,
+    server: StreamServer,
     handler: HandlerFn,
     allocator: *Allocator,
     config: Config,
@@ -60,7 +60,6 @@ pub const Server = struct {
         }
 
         pub fn deinit(context: *Context) void {
-            await context.frame;
             context.file.close();
             context.server.allocator.free(context.stack);
             context.server.allocator.free(context.buf);
@@ -82,21 +81,20 @@ pub const Server = struct {
 
     pub fn init(allocator: *Allocator, config: Config, comptime routes: []Route, comptime err_handlers: ?[]ErrorHandler) Server {
         return Server{
-            .server = TcpServer.init(TcpServer.Options{}),
+            .server = StreamServer.init(StreamServer.Options{}),
             .handler = Router(routes, err_handlers),
             .allocator = allocator,
             .config = config,
         };
     }
 
-    pub fn listen(server: *Server, address: IpAddress) !void {
+    pub fn listen(server: *Server, address: Address) !void {
         defer server.server.deinit();
         try server.server.listen(address);
 
         while (true) {
             var client_file = try server.server.accept();
             var context = try Context.init(server, client_file);
-            errdefer context.deinit();
 
             context.frame = async handleRequest(context);
         }

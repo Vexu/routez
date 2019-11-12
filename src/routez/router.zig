@@ -52,7 +52,7 @@ pub fn Router(comptime routes: []Route, comptime err_handlers: ?[]ErrorHandler) 
                 }
             }
             // not found
-            return if (err_handlers == null) error.FileNotFound else return handleError(error.FileNotFound, req, res);
+            return if (err_handlers == null) error.FileNotFound else handleError(error.FileNotFound, req, res);
         }
 
         fn handleError(err: anyerror, req: Request, res: Response) !void {

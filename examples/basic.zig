@@ -1,5 +1,5 @@
 const std = @import("std");
-const IpAddress = std.net.IpAddress;
+const Address = std.net.Address;
 usingnamespace @import("routez");
 const allocator = std.heap.direct_allocator;
 
@@ -18,7 +18,7 @@ pub fn main() !void {
         },
         null,
     );
-    var addr = try IpAddress.parse("127.0.0.1", 8080);
+    var addr = try Address.parseIp("127.0.0.1", 8080);
     try server.listen(addr);
 }
 
