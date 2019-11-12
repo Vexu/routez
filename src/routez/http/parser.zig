@@ -144,6 +144,7 @@ test "parse headers" {
         .server = undefined,
         .file = undefined,
         .frame = undefined,
+        .node = undefined,
     };
     try noasync parseHeaders(&h, &ctx);
 
@@ -178,6 +179,7 @@ test "HTTP/0.9" {
         .server = undefined,
         .file = undefined,
         .frame = undefined,
+        .node = undefined,
     };
     try noasync parse(&req, &ctx);
     assert(mem.eql(u8, req.method, Method.Get));
@@ -204,6 +206,7 @@ test "HTTP/1.1" {
         .server = undefined,
         .file = undefined,
         .frame = undefined,
+        .node = undefined,
     };
     try noasync parse(&req, &ctx);
     assert(mem.eql(u8, req.method, Method.Post));
@@ -230,6 +233,7 @@ test "HTTP/3.0" {
         .server = undefined,
         .file = undefined,
         .frame = undefined,
+        .node = undefined,
     };
     std.testing.expectError(error.UnsupportedVersion, noasync parse(&req, &ctx));
 }

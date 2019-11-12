@@ -18,6 +18,9 @@ pub const Server = struct {
     handler: HandlerFn,
     allocator: *Allocator,
     config: Config,
+    discards: DiscardStack,
+
+    const DiscardStack = std.atomic.Stack(*Context);
 
     pub const Config = struct {
         multithreaded: bool = true,
@@ -37,6 +40,8 @@ pub const Server = struct {
 
         frame: @Frame(handleRequest),
 
+        node: DiscardStack.Node,
+
         pub fn init(server: *Server, file: File) !*Context {
             var ctx = try server.allocator.create(Context);
             errdefer server.allocator.destroy(ctx);
@@ -54,6 +59,10 @@ pub const Server = struct {
                 .server = server,
                 .file = file,
                 .frame = undefined,
+                .node = .{
+                    .next = null,
+                    .data = ctx,
+                },
             };
 
             return ctx;
@@ -64,7 +73,6 @@ pub const Server = struct {
             context.file.close();
             context.server.allocator.free(context.stack);
             context.server.allocator.free(context.buf);
-            context.server.allocator.destroy(context);
         }
 
         pub fn read(context: *Context) !usize {
@@ -86,6 +94,7 @@ pub const Server = struct {
             .handler = Router(routes, err_handlers),
             .allocator = allocator,
             .config = config,
+            .discards = DiscardStack.init(),
         };
     }
 
@@ -99,11 +108,16 @@ pub const Server = struct {
             errdefer context.deinit();
 
             context.frame = async handleRequest(context);
+
+            while (server.discards.pop()) |c| {
+                c.data.deinit();
+                server.allocator.destroy(c.data);
+            }
         }
     }
 
     async fn handleRequest(context: *Context) void {
-        defer context.deinit();
+        defer context.server.discards.push(&context.node);
 
         const up = handleHttp(context) catch |e| {
             std.debug.warn("error in http handler: {}\n", e);
