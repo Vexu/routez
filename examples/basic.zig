@@ -8,7 +8,7 @@ pub const io_mode = .evented;
 pub fn main() !void {
     var server = Server.init(
         allocator,
-        Server.Config{},
+        .{},
         &[_]Route{
             all("/", indexHandler),
             get("/about", aboutHandler),

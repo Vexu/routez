@@ -21,13 +21,14 @@ pub fn parse(req: *Request, ctx: *Context) !void {
     if (!try seek(ctx, ' ')) {
         return error.NoPath;
     }
-    if (req.path.len > 1) {
-        const uri = try Uri.parse(ctx.buf[cur .. ctx.index - 1], true);
-        req.path = try Uri.resolvePath(req.headers.list.allocator, uri.path);
-        req.query = uri.query;
-    } else {
-        req.path = try mem.dupe(req.headers.list.allocator, u8, ctx.buf[cur .. ctx.index - 1]);
-    }
+    req.path = ctx.buf[cur .. ctx.index - 1];
+    // if (req.path.len > 1) {
+    //     const uri = try Uri.parse(ctx.buf[cur .. ctx.index - 1], true);
+    //     req.path = try Uri.resolvePath(req.headers.list.allocator, uri.path);
+    //     req.query = uri.query;
+    // } else {
+    //     req.path = try mem.dupe(req.headers.list.allocator, u8, ctx.buf[cur .. ctx.index - 1]);
+    // }
     cur = ctx.index;
 
     // version
@@ -52,7 +53,8 @@ pub fn parse(req: *Request, ctx: *Context) !void {
 
     // read to end
     if (!is_test) {
-        while ((try ctx.read()) != 0) {}
+        // TODO waitFdReadable
+        // while ((try ctx.read()) != 0) {}
     }
     req.body = ctx.buf[ctx.index..ctx.count];
 }
@@ -162,18 +164,12 @@ test "parse headers" {
     assert(mem.eql(u8, slice[6].value, "1"));
 }
 
-/// for testing, normally all memory is freed when the arena allocator is freed
-fn deinit(req: *Request) void {
-    req.headers.list.allocator.free(req.path);
-    req.headers.deinit();
-}
-
 test "HTTP/0.9" {
     var b = try mem.dupe(alloc, u8, "GET / HTTP/0.9\r\n");
     defer alloc.free(b);
     var req: Request = undefined;
     req.headers = Headers.init(alloc);
-    defer deinit(&req);
+    defer req.headers.deinit();
     var ctx = Context{
         .buf = b,
         .count = b.len,
@@ -199,7 +195,7 @@ test "HTTP/1.1" {
     defer alloc.free(b);
     var req: Request = undefined;
     req.headers = Headers.init(alloc);
-    defer deinit(&req);
+    defer req.headers.deinit();
     var ctx = Context{
         .buf = b,
         .count = b.len,
@@ -225,7 +221,7 @@ test "HTTP/3.0" {
     defer alloc.free(b);
     var req: Request = undefined;
     req.headers = Headers.init(alloc);
-    defer deinit(&req);
+    defer req.headers.deinit();
     var ctx = Context{
         .buf = b,
         .count = b.len,

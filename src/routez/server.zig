@@ -60,6 +60,7 @@ pub const Server = struct {
         }
 
         pub fn deinit(context: *Context) void {
+            await context.frame;
             context.file.close();
             context.server.allocator.free(context.stack);
             context.server.allocator.free(context.buf);
@@ -81,7 +82,7 @@ pub const Server = struct {
 
     pub fn init(allocator: *Allocator, config: Config, comptime routes: []Route, comptime err_handlers: ?[]ErrorHandler) Server {
         return Server{
-            .server = StreamServer.init(StreamServer.Options{}),
+            .server = StreamServer.init(.{}),
             .handler = Router(routes, err_handlers),
             .allocator = allocator,
             .config = config,
@@ -93,8 +94,9 @@ pub const Server = struct {
         try server.server.listen(address);
 
         while (true) {
-            var client_file = try server.server.accept();
-            var context = try Context.init(server, client_file);
+            var conn = try server.server.accept();
+            var context = try Context.init(server, conn.file);
+            errdefer context.deinit();
 
             context.frame = async handleRequest(context);
         }
@@ -144,7 +146,8 @@ pub const Server = struct {
             };
 
             if (parser.parse(&req, ctx)) {
-                @newStackCall(ctx.stack, ctx.server.handler, &req, &res) catch |e| {
+                var frame = @asyncCall(ctx.stack, {}, ctx.server.handler, &req, &res);
+                await frame catch |e| {
                     try defaultErrorHandler(e, &req, &res);
                 };
             } else |e| {

@@ -179,7 +179,7 @@ test "index" {
         .version = .Http11,
     };
     var res: response = undefined;
-    try handler(&req, &res);
+    try noasync handler(&req, &res);
     assert(res.status_code == .Ok);
 }
 
@@ -200,7 +200,7 @@ test "args" {
     };
     var res: response = undefined;
 
-    try handler(&req, &res);
+    try noasync handler(&req, &res);
 }
 
 fn argHandler(req: Request, res: Response, args: *const struct {
@@ -222,7 +222,7 @@ test "delim string" {
     };
     var res: response = undefined;
 
-    try handler(&req, &res);
+    try noasync handler(&req, &res);
 }
 
 fn delimHandler(req: Request, res: Response, args: *const struct {
@@ -244,7 +244,7 @@ test "subRoute" {
     };
     var res: response = undefined;
 
-    try handler(&req, &res);
+    try noasync handler(&req, &res);
     assert(res.status_code == .Ok);
 }
 
@@ -272,7 +272,7 @@ test "static files" {
     };
 
     // ignore file not found error
-    handler(&req, &res) catch |e| switch (e) {
+    noasync handler(&req, &res) catch |e| switch (e) {
         error.FileNotFound => return,
         else => return e,
     };
@@ -292,6 +292,6 @@ test "optional char" {
         .version = .Http11,
     };
     var res: response = undefined;
-    try handler(&req, &res);
+    try noasync handler(&req, &res);
     assert(res.status_code == .Ok);
 }

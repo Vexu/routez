@@ -8,7 +8,7 @@ const TypeInfo = builtin.TypeInfo;
 const TypeId = builtin.TypeId;
 usingnamespace @import("http.zig");
 
-pub const HandlerFn = fn handle(Request, Response) anyerror!void;
+pub const HandlerFn = async fn handle(Request, Response) anyerror!void;
 
 pub const ErrorHandler = struct {
     handler: fn (Request, Response) void,
@@ -22,7 +22,7 @@ pub fn Router(comptime routes: []Route, comptime err_handlers: ?[]ErrorHandler) 
         @compileError("Router must have at least one route");
     }
     return struct {
-        fn handle(req: Request, res: Response) !void {
+        async fn handle(req: Request, res: Response) !void {
             if (req.path[0] == '*') {
                 @panic("Todo server request");
             }
