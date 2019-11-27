@@ -1,5 +1,5 @@
 # Routez
-HTTP server for Zig
+HTTP server for Zig. [See it in action](http://routez.vexu.eu)
 
 ## Example
 ### [basic](examples/basic.zig)
