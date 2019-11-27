@@ -91,7 +91,22 @@ fn createRoute(method: ?[]const u8, path: []const u8, handler: var) Route {
     };
 }
 
-pub fn subRoute(allocator: *std.mem.Allocator, route: []const u8, comptime routes: []Route, comptime err_handlers: ?[]ErrorHandler) Route {
+pub fn subRoute(allocator: *std.mem.Allocator, route: []const u8, comptime handlers: var) Route {
+    const T = @typeOf(handlers);
+    const fields = std.meta.fields(T);
+    comptime var routes: []Route = &[_]Route{};
+    comptime var err_handlers: []ErrorHandler = &[_]ErrorHandler{};
+    inline for (fields) |field| {
+        switch (field.field_type) {
+            ErrorHandler => {
+                err_handlers = &(err_handlers ++ [_]ErrorHandler{@field(handlers, field.name)});
+            },
+            Route => {
+                routes = &(routes ++ [_]Route{@field(handlers, field.name)});
+            },
+            else => |f_type| @compileError("unsupported route type " ++ @typeName(f_type)),
+        }
+    }
     if (routes.len == 0) {
         @compileError("Router must have at least one route");
     }
@@ -114,7 +129,7 @@ pub fn subRoute(allocator: *std.mem.Allocator, route: []const u8, comptime route
                     }
                 } else {
                     if (match(r, err, req, res, args.path) catch |e| {
-                        if (err_handlers == null) {
+                        if (err_handlers.len == 0) {
                             return e;
                         } else {
                             return handleError(e, req, res);
@@ -125,7 +140,7 @@ pub fn subRoute(allocator: *std.mem.Allocator, route: []const u8, comptime route
                 }
             }
             // not found
-            return if (err_handlers == null) error.FileNotFound else return handleError(error.FileNotFound, req, res);
+            return if (err_handlers.len == 0) error.FileNotFound else return handleError(error.FileNotFound, req, res);
         }
 
         fn handleError(err: anyerror, req: Request, res: Response) !void {
@@ -168,7 +183,7 @@ const response = @import("http/response.zig").Response;
 const alloc = std.heap.direct_allocator;
 
 test "index" {
-    const handler = comptime Router(&[_]Route{get("/", indexHandler)}, null);
+    const handler = comptime Router(.{get("/", indexHandler)});
 
     var req = request{
         .method = Method.Get,
@@ -188,7 +203,7 @@ fn indexHandler(req: Request, res: Response) void {
 }
 
 test "args" {
-    const handler = comptime Router(&[_]Route{get("/a/{num}", argHandler)}, null);
+    const handler = comptime Router(.{get("/a/{num}", argHandler)});
 
     var req = request{
         .method = Method.Get,
@@ -210,7 +225,7 @@ fn argHandler(req: Request, res: Response, args: *const struct {
 }
 
 test "delim string" {
-    const handler = comptime Router(&[_]Route{get("/{str;}", delimHandler)}, null);
+    const handler = comptime Router(.{get("/{str;}", delimHandler)});
 
     var req = request{
         .method = Method.Get,
@@ -232,7 +247,7 @@ fn delimHandler(req: Request, res: Response, args: *const struct {
 }
 
 test "subRoute" {
-    const handler = comptime Router(&[_]Route{subRoute(alloc, "/sub", &[_]Route{get("/other", indexHandler)}, null)}, null);
+    const handler = comptime Router(.{subRoute(alloc, "/sub", .{get("/other", indexHandler)})});
 
     var req = request{
         .method = Method.Get,
@@ -249,10 +264,10 @@ test "subRoute" {
 }
 
 test "static files" {
-    const handler = comptime Router(&[_]Route{static(
+    const handler = comptime Router(.{static(
         "assets",
         "/static",
-    )}, null);
+    )});
 
     var req = request{
         .method = Method.Get,
@@ -281,7 +296,7 @@ test "static files" {
 }
 
 test "optional char" {
-    const handler = comptime Router(&[_]Route{get("/about/?", indexHandler)}, null);
+    const handler = comptime Router(.{get("/about/?", indexHandler)});
 
     var req = request{
         .method = Method.Get,

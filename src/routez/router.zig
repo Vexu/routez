@@ -15,9 +15,22 @@ pub const ErrorHandler = struct {
     err: anyerror,
 };
 
-// todo include error handlers and other middleware in routes
-// https://github.com/ziglang/zig/issues/208 will improve this
-pub fn Router(comptime routes: []Route, comptime err_handlers: ?[]ErrorHandler) HandlerFn {
+pub fn Router(comptime handlers: var) HandlerFn {
+    const T = @typeOf(handlers);
+    const fields = std.meta.fields(T);
+    comptime var routes: []Route = &[_]Route{};
+    comptime var err_handlers: []ErrorHandler = &[_]ErrorHandler{};
+    inline for (fields) |field| {
+        switch (field.field_type) {
+            ErrorHandler => {
+                err_handlers = &(err_handlers ++ [_]ErrorHandler{@field(handlers, field.name)});
+            },
+            Route => {
+                routes = &(routes ++ [_]Route{@field(handlers, field.name)});
+            },
+            else => |f_type| @compileError("unsupported route type " ++ @typeName(f_type)),
+        }
+    }
     if (routes.len == 0) {
         @compileError("Router must have at least one route");
     }
@@ -41,7 +54,7 @@ pub fn Router(comptime routes: []Route, comptime err_handlers: ?[]ErrorHandler) 
                     }
                 } else {
                     if (match(route, err, req, res, req.path) catch |e| {
-                        if (err_handlers == null) {
+                        if (err_handlers.len == 0) {
                             return e;
                         } else {
                             return handleError(e, req, res);
@@ -52,7 +65,7 @@ pub fn Router(comptime routes: []Route, comptime err_handlers: ?[]ErrorHandler) 
                 }
             }
             // not found
-            return if (err_handlers == null) error.FileNotFound else handleError(error.FileNotFound, req, res);
+            return if (err_handlers.len == 0) error.FileNotFound else handleError(error.FileNotFound, req, res);
         }
 
         fn handleError(err: anyerror, req: Request, res: Response) !void {
@@ -80,7 +93,7 @@ pub fn match(
     req: Request,
     res: Response,
     path: []const u8,
-) (if (Errs != null) Errs.?!bool else bool) {
+) if (Errs != null) Errs.?!bool else bool {
     const handler = @ptrCast(route.handler_type, route.handler);
     const has_args = @typeInfo(@typeOf(handler)).Fn.args.len == 3;
     const Args = if (has_args) @typeInfo(@typeInfo(@typeOf(handler)).Fn.args[2].arg_type.?).Pointer.child else void;

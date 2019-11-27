@@ -76,6 +76,7 @@ pub const Server = struct {
         }
 
         pub fn read(context: *Context) !usize {
+            if (context.count != 0) return 0; // TODO waitFdReadable
             const count = try context.file.read(context.buf[context.count..]);
             context.count += count;
             return count;
@@ -88,10 +89,10 @@ pub const Server = struct {
         None,
     };
 
-    pub fn init(allocator: *Allocator, config: Config, comptime routes: []Route, comptime err_handlers: ?[]ErrorHandler) Server {
+    pub fn init(allocator: *Allocator, config: Config, comptime handlers: var) Server {
         return Server{
             .server = StreamServer.init(.{}),
-            .handler = Router(routes, err_handlers),
+            .handler = Router(handlers),
             .allocator = allocator,
             .config = config,
             .discards = DiscardStack.init(),
@@ -102,10 +103,13 @@ pub const Server = struct {
         defer server.server.deinit();
         try server.server.listen(address);
 
+        // pls don't stop
+        std.event.Loop.instance.?.beginOneEvent();
+
         while (true) {
             var conn = try server.server.accept();
+            errdefer conn.file.close();
             var context = try Context.init(server, conn.file);
-            errdefer context.deinit();
 
             context.frame = async handleRequest(context);
 

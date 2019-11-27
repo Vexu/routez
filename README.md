@@ -8,22 +8,21 @@ build with `./build_examples.sh` ([see #855](https://github.com/ziglang/zig/issu
 const std = @import("std");
 const Address = std.net.Address;
 usingnamespace @import("routez");
-const allocator = std.heap.direct_allocator;
+const allocator = std.heap.page_allocator;
 
 pub const io_mode = .evented;
 
 pub fn main() !void {
     var server = Server.init(
         allocator,
-        Server.Config{},
-        &[_]Route{
+        .{},
+        .{
             all("/", indexHandler),
             get("/about", aboutHandler),
             get("/about/more", aboutHandler2),
             get("/post/{post_num}/?", postHandler),
             static("./", "/static"),
         },
-        null,
     );
     var addr = try Address.parseIp("127.0.0.1", 8080);
     try server.listen(addr);

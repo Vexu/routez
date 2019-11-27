@@ -21,14 +21,13 @@ pub fn parse(req: *Request, ctx: *Context) !void {
     if (!try seek(ctx, ' ')) {
         return error.NoPath;
     }
-    req.path = ctx.buf[cur .. ctx.index - 1];
-    // if (req.path.len > 1) {
-    //     const uri = try Uri.parse(ctx.buf[cur .. ctx.index - 1], true);
-    //     req.path = try Uri.resolvePath(req.headers.list.allocator, uri.path);
-    //     req.query = uri.query;
-    // } else {
-    //     req.path = try mem.dupe(req.headers.list.allocator, u8, ctx.buf[cur .. ctx.index - 1]);
-    // }
+    if (req.path.len > 1) {
+        const uri = try Uri.parse(ctx.buf[cur .. ctx.index - 1], true);
+        req.path = try Uri.resolvePath(req.headers.list.allocator, uri.path);
+        req.query = uri.query;
+    } else {
+        req.path = try mem.dupe(req.headers.list.allocator, u8, ctx.buf[cur .. ctx.index - 1]);
+    }
     cur = ctx.index;
 
     // version
@@ -53,8 +52,7 @@ pub fn parse(req: *Request, ctx: *Context) !void {
 
     // read to end
     if (!is_test) {
-        // TODO waitFdReadable
-        // while ((try ctx.read()) != 0) {}
+        while ((try ctx.read()) != 0) {}
     }
     req.body = ctx.buf[ctx.index..ctx.count];
 }
