@@ -15,6 +15,7 @@ pub fn main() !void {
             get("/about/more", aboutHandler2),
             get("/post/{post_num}/?", postHandler),
             static("./", "/static"),
+            all("/counter", counterHandler),
         },
     );
     var addr = try Address.parseIp("127.0.0.1", 8080);
@@ -41,4 +42,10 @@ fn postHandler(req: Request, res: Response, args: *const struct {
 }) !void {
     res.status_code = .Ok;
     try res.print("Hello from post, post_num is {}\n", args.post_num);
+}
+
+var counter = std.atomic.Int(usize).init(0);
+fn counterHandler(req: Request, res: Response) !void {
+    res.status_code = .Ok;
+    try res.print("Page loaded {} times\n", counter.fetchAdd(1));
 }
