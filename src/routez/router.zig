@@ -50,6 +50,7 @@ pub fn Router(comptime handlers: var) HandlerFn {
                 // try matching path to route
                 if (err == null) {
                     if (match(route, err, req, res, req.path)) {
+                        res.status_code = .Ok;
                         return;
                     }
                 } else {
@@ -60,6 +61,7 @@ pub fn Router(comptime handlers: var) HandlerFn {
                             return handleError(e, req, res);
                         }
                     }) {
+                        res.status_code = .Ok;
                         return;
                     }
                 }

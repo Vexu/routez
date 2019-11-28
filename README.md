@@ -8,7 +8,7 @@ build with `./build_examples.sh` ([see #855](https://github.com/ziglang/zig/issu
 const std = @import("std");
 const Address = std.net.Address;
 usingnamespace @import("routez");
-const allocator = std.heap.page_allocator;
+const allocator = std.heap.direct_allocator;
 
 pub const io_mode = .evented;
 
@@ -22,6 +22,7 @@ pub fn main() !void {
             get("/about/more", aboutHandler2),
             get("/post/{post_num}/?", postHandler),
             static("./", "/static"),
+            all("/counter", counterHandler),
         },
     );
     var addr = try Address.parseIp("127.0.0.1", 8080);
@@ -29,24 +30,25 @@ pub fn main() !void {
 }
 
 fn indexHandler(req: Request, res: Response) !void {
-    res.status_code = .Ok;
     try res.sendFile("examples/index.html");
 }
 
 fn aboutHandler(req: Request, res: Response) !void {
-    res.status_code = .Ok;
     try res.write("Hello from about\n");
 }
 
 fn aboutHandler2(req: Request, res: Response) !void {
-    res.status_code = .Ok;
     try res.write("Hello from about2\n");
 }
 
 fn postHandler(req: Request, res: Response, args: *const struct {
     post_num: []const u8,
 }) !void {
-    res.status_code = .Ok;
     try res.print("Hello from post, post_num is {}\n", args.post_num);
+}
+
+var counter = std.atomic.Int(usize).init(0);
+fn counterHandler(req: Request, res: Response) !void {
+    try res.print("Page loaded {} times\n", counter.fetchAdd(1));
 }
 ```

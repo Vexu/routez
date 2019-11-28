@@ -15,9 +15,9 @@ pub const Response = struct {
 
     // todo improve, cache control
     pub fn sendFile(res: *Response, path: []const u8) !void {
-        var out_stream = (try std.fs.File.openRead(path)).inStream();
-        defer out_stream.file.close();
-        const stream = &out_stream.stream;
+        var in_stream = (try std.fs.Dir.cwd().openRead(path)).inStream();
+        defer in_stream.file.close();
+        const stream = &in_stream.stream;
 
         const content = try stream.readAllAlloc(res.allocator, 1024 * 1024);
         defer res.allocator.free(content);

@@ -23,29 +23,24 @@ pub fn main() !void {
 }
 
 fn indexHandler(req: Request, res: Response) !void {
-    res.status_code = .Ok;
     try res.sendFile("examples/index.html");
 }
 
 fn aboutHandler(req: Request, res: Response) !void {
-    res.status_code = .Ok;
     try res.write("Hello from about\n");
 }
 
 fn aboutHandler2(req: Request, res: Response) !void {
-    res.status_code = .Ok;
     try res.write("Hello from about2\n");
 }
 
 fn postHandler(req: Request, res: Response, args: *const struct {
     post_num: []const u8,
 }) !void {
-    res.status_code = .Ok;
     try res.print("Hello from post, post_num is {}\n", args.post_num);
 }
 
 var counter = std.atomic.Int(usize).init(0);
 fn counterHandler(req: Request, res: Response) !void {
-    res.status_code = .Ok;
     try res.print("Page loaded {} times\n", counter.fetchAdd(1));
 }

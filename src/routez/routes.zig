@@ -125,6 +125,7 @@ pub fn subRoute(allocator: *std.mem.Allocator, route: []const u8, comptime handl
                 // try matching path to route
                 if (err == null) {
                     if (match(r, err, req, res, args.path)) {
+                        res.status_code = .Ok;
                         return;
                     }
                 } else {
@@ -135,6 +136,7 @@ pub fn subRoute(allocator: *std.mem.Allocator, route: []const u8, comptime handl
                             return handleError(e, req, res);
                         }
                     }) {
+                        res.status_code = .Ok;
                         return;
                     }
                 }
@@ -153,7 +155,7 @@ pub fn subRoute(allocator: *std.mem.Allocator, route: []const u8, comptime handl
         }
     }.handle;
 
-    const path = if (route[route.len - 1] == '/') route[0 .. route.len - 2] ++ "{path;}" else route ++ "{path;}";
+    const path = (if (route[route.len - 1] == '/') route[0 .. route.len - 2] else route) ++ "{path;}";
     return createRoute(Method.Get, path, handler);
 }
 
