@@ -1,26 +1,36 @@
 const std = @import("std");
 const mem = std.mem;
+const hashString = std.hash_map.hashString;
 
 const Mime = struct {
     extension: []const u8,
     mime: []const u8,
+    hash: u32,
+    
+    fn init(extension: []const u8, mime: []const u8) Mime {
+        return .{
+            .extension = extension,
+            .hash = hashString(extension),
+            .mime = mime,
+        };
+    }
 };
 
 const mimes = [_]Mime{
-    Mime{ .extension = "js", .mime = js },
-    Mime{ .extension = "css", .mime = css },
-    Mime{ .extension = "html", .mime = html },
-    Mime{ .extension = "png", .mime = png },
-    Mime{ .extension = "jpeg", .mime = jpeg },
-    Mime{ .extension = "gif", .mime = gif },
-    Mime{ .extension = "webp", .mime = webp },
-    Mime{ .extension = "svg", .mime = svg },
-    Mime{ .extension = "ico", .mime = icon },
-    Mime{ .extension = "txt", .mime = text },
-    Mime{ .extension = "wav", .mime = wav },
-    Mime{ .extension = "ogg", .mime = ogg },
-    Mime{ .extension = "webm", .mime = webm },
-    Mime{ .extension = "zig", .mime = text },
+    Mime.init("js", js),
+    Mime.init("css", css),
+    Mime.init("html", html),
+    Mime.init("png", png),
+    Mime.init("jpeg", jpeg),
+    Mime.init("gif", gif),
+    Mime.init("webp", webp),
+    Mime.init("svg", svg),
+    Mime.init("ico", icon),
+    Mime.init("txt", text),
+    Mime.init("wav", wav),
+    Mime.init("ogg", ogg),
+    Mime.init("webm", webm),
+    Mime.init("zig", text),
 };
 
 pub const js = "application/javascript;charset=UTF-8";
@@ -40,8 +50,9 @@ pub const default = "application/octet-stream";
 
 /// changes mime if better alternative found
 pub fn fromExtension(extension: []const u8) ?[]const u8 {
+    var hash = hashString(extension);
     for (mimes) |m| {
-        if (mem.eql(u8, m.extension, extension)) {
+        if (m.hash == hash and mem.eql(u8, m.extension, extension)) {
             return m.mime;
         }
     }
