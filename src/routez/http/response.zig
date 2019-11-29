@@ -11,7 +11,9 @@ pub const Response = struct {
     /// arena allocator that frees everything when response has been sent
     allocator: *std.mem.Allocator,
 
-    pub fn setType(res: *Response, mimetype: []const u8) !void {}
+    pub fn setType(res: *Response, mimetype: []const u8) !void {
+        try res.headers.put("content-type", mimetype);
+    }
 
     // todo improve, cache control
     pub fn sendFile(res: *Response, path: []const u8) !void {

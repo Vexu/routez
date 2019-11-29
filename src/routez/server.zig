@@ -81,6 +81,11 @@ pub const Server = struct {
             context.count += count;
             return count;
         }
+
+        pub fn reset(context: *Context) void {
+            context.count = 0;
+            context.index = 0;
+        }
     };
 
     const Upgrade = enum {
@@ -99,17 +104,42 @@ pub const Server = struct {
         };
     }
 
-    pub fn listen(server: *Server, address: Address) !void {
+    pub const ListenError = error {
+        AddressInUse,
+        AddressNotAvailable,
+        ListenError,
+        AcceptError,
+        BlockedByFirewall,
+    };
+
+    pub fn listen(server: *Server, address: Address) ListenError!void {
         defer server.server.deinit();
-        try server.server.listen(address);
+        server.server.listen(address) catch |err| switch (err) {
+            error.AddressInUse,
+            error.AddressNotAvailable,
+            => |e| return e,
+            else => return error.ListenError,
+        };
 
         // pls don't stop
         std.event.Loop.instance.?.beginOneEvent();
 
         while (true) {
-            var conn = try server.server.accept();
-            errdefer conn.file.close();
-            var context = try Context.init(server, conn.file);
+            var conn = server.server.accept() catch |err| switch (err) {
+                error.ConnectionAborted,
+                error.ProcessFdQuotaExceeded,
+                error.SystemFdQuotaExceeded,
+                error.SystemResources,
+                error.ProtocolFailure,
+                error.Unexpected,
+                => continue,
+                error.BlockedByFirewall,
+                => |e| return e,
+            };
+            var context = Context.init(server, conn.file) catch {
+                conn.file.close();
+                continue;
+            };
 
             context.frame = async handleRequest(context);
 
@@ -180,8 +210,7 @@ pub const Server = struct {
             arena.deinit();
             arena = ArenaAllocator.init(ctx.server.allocator);
             buf.resize(0) catch unreachable;
-            ctx.count = 0;
-            ctx.index = 0;
+            ctx.reset();
             // TODO keepalive here
             return .None;
         }
@@ -197,6 +226,7 @@ pub const Server = struct {
         for (res.headers.list.toSlice()) |header| {
             try stream.print("{}: {}\r\n", header.name, header.value);
         }
+        try stream.write("connection: close\r\n");
         if (is_head) {
             try stream.write("content-length: 0\r\n\r\n");
         } else {
