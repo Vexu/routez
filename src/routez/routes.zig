@@ -1,5 +1,5 @@
 const std = @import("std");
-const assert = std.debug.assert;
+const expect = std.testing.expect;
 const builtin = @import("builtin");
 const TypeId = builtin.TypeId;
 usingnamespace @import("http.zig");
@@ -171,7 +171,6 @@ pub fn static(local_path: []const u8, remote_path: ?[]const u8) Route {
             const full_path = try std.fs.path.join(allocator, [_][]const u8{ path, args.path });
 
             try res.sendFile(full_path);
-            res.status_code = .Ok;
         }
     }.staticHandler;
 
@@ -197,7 +196,7 @@ test "index" {
     };
     var res: response = undefined;
     try noasync handler(&req, &res);
-    assert(res.status_code == .Ok);
+    expect(res.status_code == .Ok);
 }
 
 fn indexHandler(req: Request, res: Response) void {
@@ -223,7 +222,7 @@ test "args" {
 fn argHandler(req: Request, res: Response, args: *const struct {
     num: u32,
 }) void {
-    assert(args.num == 14);
+    expect(args.num == 14);
 }
 
 test "delim string" {
@@ -245,7 +244,7 @@ test "delim string" {
 fn delimHandler(req: Request, res: Response, args: *const struct {
     str: []const u8,
 }) void {
-    assert(std.mem.eql(u8, args.str, "all/of/this.html"));
+    expect(std.mem.eql(u8, args.str, "all/of/this.html"));
 }
 
 test "subRoute" {
@@ -262,7 +261,7 @@ test "subRoute" {
     var res: response = undefined;
 
     try noasync handler(&req, &res);
-    assert(res.status_code == .Ok);
+    expect(res.status_code == .Ok);
 }
 
 test "static files" {
@@ -293,8 +292,8 @@ test "static files" {
         error.FileNotFound => return,
         else => return e,
     };
-    assert(std.mem.eql(u8, (try res.headers.get(alloc, "content-type")).?[0].value, "text/plain;charset=UTF-8"));
-    assert(std.mem.eql(u8, res.body.buffer.toSlice(), "Some text\n"));
+    expect(std.mem.eql(u8, (try res.headers.get(alloc, "content-type")).?[0].value, "text/plain;charset=UTF-8"));
+    expect(std.mem.eql(u8, res.body.buffer.toSlice(), "Some text\n"));
 }
 
 test "optional char" {
@@ -310,5 +309,5 @@ test "optional char" {
     };
     var res: response = undefined;
     try noasync handler(&req, &res);
-    assert(res.status_code == .Ok);
+    expect(res.status_code == .Ok);
 }

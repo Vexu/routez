@@ -1,6 +1,5 @@
 const std = @import("std");
 const mem = std.mem;
-const assert = std.debug.assert;
 const Allocator = mem.Allocator;
 const ArrayList = std.ArrayList;
 const Context = @import("../server.zig").Server.Context;
