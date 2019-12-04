@@ -94,15 +94,15 @@ fn createRoute(method: ?[]const u8, path: []const u8, handler: var) Route {
 pub fn subRoute(allocator: *std.mem.Allocator, route: []const u8, comptime handlers: var) Route {
     const T = @typeOf(handlers);
     const fields = std.meta.fields(T);
-    comptime var routes: []Route = &[_]Route{};
-    comptime var err_handlers: []ErrorHandler = &[_]ErrorHandler{};
+    comptime var routes: []const Route = &[_]Route{};
+    comptime var err_handlers: []const ErrorHandler = &[_]ErrorHandler{};
     inline for (fields) |field| {
         switch (field.field_type) {
             ErrorHandler => {
-                err_handlers = &(err_handlers ++ [_]ErrorHandler{@field(handlers, field.name)});
+                err_handlers = (err_handlers ++ &[_]ErrorHandler{@field(handlers, field.name)});
             },
             Route => {
-                routes = &(routes ++ [_]Route{@field(handlers, field.name)});
+                routes = (routes ++ &[_]Route{@field(handlers, field.name)});
             },
             else => |f_type| @compileError("unsupported route type " ++ @typeName(f_type)),
         }
@@ -168,7 +168,7 @@ pub fn static(local_path: []const u8, remote_path: ?[]const u8) Route {
         }) !void {
             const allocator = res.allocator;
             const path = if (local_path[local_path.len - 1] == '/') local_path else local_path ++ "/";
-            const full_path = try std.fs.path.join(allocator, [_][]const u8{ path, args.path });
+            const full_path = try std.fs.path.join(allocator, &[_][]const u8{ path, args.path });
 
             try res.sendFile(full_path);
         }

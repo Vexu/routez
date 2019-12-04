@@ -18,15 +18,15 @@ pub const ErrorHandler = struct {
 pub fn Router(comptime handlers: var) HandlerFn {
     const T = @typeOf(handlers);
     const fields = std.meta.fields(T);
-    comptime var routes: []Route = &[_]Route{};
-    comptime var err_handlers: []ErrorHandler = &[_]ErrorHandler{};
+    comptime var routes: []const Route = &[_]Route{};
+    comptime var err_handlers: []const ErrorHandler = &[_]ErrorHandler{};
     inline for (fields) |field| {
         switch (field.field_type) {
             ErrorHandler => {
-                err_handlers = &(err_handlers ++ [_]ErrorHandler{@field(handlers, field.name)});
+                err_handlers = (err_handlers ++ &[_]ErrorHandler{@field(handlers, field.name)});
             },
             Route => {
-                routes = &(routes ++ [_]Route{@field(handlers, field.name)});
+                routes = (routes ++ &[_]Route{@field(handlers, field.name)});
             },
             else => |f_type| @compileError("unsupported route type " ++ @typeName(f_type)),
         }
