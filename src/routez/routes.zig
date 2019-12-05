@@ -86,8 +86,7 @@ fn createRoute(method: ?[]const u8, path: []const u8, handler: var) Route {
     return Route{
         .path = path,
         .method = method,
-        .handler = @ptrCast(fn () void, handler),
-        .handler_type = @typeOf(handler),
+        .handler = handler,
     };
 }
 
@@ -115,7 +114,7 @@ pub fn subRoute(allocator: *std.mem.Allocator, route: []const u8, comptime handl
             path: []const u8,
         }) !void {
             inline for (routes) |r| {
-                comptime var type_info = @typeInfo(r.handler_type).Fn;
+                comptime var type_info = @typeInfo(@typeOf(r.handler)).Fn;
                 comptime var err: ?type = switch (@typeId(type_info.return_type.?)) {
                     TypeId.ErrorUnion => @typeInfo(type_info.return_type.?).ErrorUnion.error_set,
                     else => null,

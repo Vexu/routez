@@ -40,7 +40,7 @@ pub fn Router(comptime handlers: var) HandlerFn {
                 @panic("Todo server request");
             }
             inline for (routes) |route| {
-                comptime var type_info = @typeInfo(route.handler_type).Fn;
+                comptime var type_info = @typeInfo(@typeOf(route.handler)).Fn;
                 comptime var err: ?type = switch (@typeId(type_info.return_type.?)) {
                     TypeId.ErrorUnion => @typeInfo(type_info.return_type.?).ErrorUnion.error_set,
                     else => null,
@@ -84,8 +84,7 @@ pub fn Router(comptime handlers: var) HandlerFn {
 pub const Route = struct {
     path: []const u8,
     method: ?[]const u8,
-    handler: fn () void,
-    handler_type: type,
+    handler: var,
 };
 
 /// returns 1 if request matched route
@@ -96,7 +95,7 @@ pub fn match(
     res: Response,
     path: []const u8,
 ) if (Errs != null) Errs.?!bool else bool {
-    const handler = @ptrCast(route.handler_type, route.handler);
+    const handler = route.handler;
     const has_args = @typeInfo(@typeOf(handler)).Fn.args.len == 3;
     const Args = if (has_args) @typeInfo(@typeInfo(@typeOf(handler)).Fn.args[2].arg_type.?).Pointer.child else void;
 
