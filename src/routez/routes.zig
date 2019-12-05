@@ -1,7 +1,5 @@
 const std = @import("std");
 const expect = std.testing.expect;
-const builtin = @import("builtin");
-const TypeId = builtin.TypeId;
 usingnamespace @import("http.zig");
 usingnamespace @import("router.zig");
 
@@ -52,7 +50,7 @@ pub fn custom(method: []const u8, path: []const u8, handler: var) Route {
 /// add route with given method
 fn createRoute(method: ?[]const u8, path: []const u8, handler: var) Route {
     const t = @typeInfo(@typeOf(handler));
-    if (t != builtin.TypeId.Fn) {
+    if (t != .Fn) {
         @compileError("handler must be a function");
     }
     const f = t.Fn;
@@ -70,16 +68,16 @@ fn createRoute(method: ?[]const u8, path: []const u8, handler: var) Route {
 
     if (f.args.len == 3) {
         const arg_type = f.args[2].arg_type orelse void;
-        if (@typeId(arg_type) != TypeId.Pointer or blk: {
+        if (@typeId(arg_type) != .Pointer or blk: {
             const ptr = @typeInfo(arg_type).Pointer;
-            break :blk !ptr.is_const or ptr.size != .One or @typeId(ptr.child) != TypeId.Struct;
+            break :blk !ptr.is_const or ptr.size != .One or @typeId(ptr.child) != .Struct;
         }) {
             @compileError("third argument of a handler must be a const pointer to a struct containing all path arguments it takes");
         }
     }
 
-    const ret = f.return_type orelse undefined;
-    if (ret != void and (@typeInfo(ret) != builtin.TypeId.ErrorUnion or @typeInfo(ret).ErrorUnion.payload != void)) {
+    const ret = f.return_type.?;
+    if (ret != void and (@typeInfo(ret) != .ErrorUnion or @typeInfo(ret).ErrorUnion.payload != void)) {
         @compileError("handler must return void which may be in an error union");
     }
 
@@ -116,7 +114,7 @@ pub fn subRoute(allocator: *std.mem.Allocator, route: []const u8, comptime handl
             inline for (routes) |r| {
                 comptime var type_info = @typeInfo(@typeOf(r.handler)).Fn;
                 comptime var err: ?type = switch (@typeId(type_info.return_type.?)) {
-                    TypeId.ErrorUnion => @typeInfo(type_info.return_type.?).ErrorUnion.error_set,
+                    .ErrorUnion => @typeInfo(type_info.return_type.?).ErrorUnion.error_set,
                     else => null,
                 };
                 var method = r.method;

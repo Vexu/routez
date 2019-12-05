@@ -48,7 +48,7 @@ pub const ogg = "audio/ogg";
 pub const webm = "video/webm";
 pub const default = "application/octet-stream";
 
-/// changes mime if better alternative found
+/// return mime type of extension if found
 pub fn fromExtension(extension: []const u8) ?[]const u8 {
     var hash = hashString(extension);
     for (mimes) |m| {

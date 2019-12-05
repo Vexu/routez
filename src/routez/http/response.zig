@@ -15,7 +15,7 @@ pub const Response = struct {
         try res.headers.put("content-type", mimetype);
     }
 
-    pub const SendFileError = error {
+    pub const SendFileError = error{
         SystemError,
         AccessDenied,
         FileNotFound,
@@ -48,9 +48,7 @@ pub const Response = struct {
         try res.setType(mimetype);
     }
 
-    pub const WriteError = error {
-        OutOfMemory,
-    } || Headers.Error;
+    pub const WriteError = std.mem.Allocator.Error || Headers.Error;
 
     pub fn write(res: *Response, bytes: []const u8) WriteError!void {
         try res.setType(mime.html);

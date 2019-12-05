@@ -104,7 +104,7 @@ pub const Server = struct {
         };
     }
 
-    pub const ListenError = error {
+    pub const ListenError = error{
         AddressInUse,
         AddressNotAvailable,
         ListenError,
@@ -120,9 +120,6 @@ pub const Server = struct {
             => |e| return e,
             else => return error.ListenError,
         };
-
-        // pls don't stop
-        std.event.Loop.instance.?.beginOneEvent();
 
         while (true) {
             var conn = server.server.accept() catch |err| switch (err) {

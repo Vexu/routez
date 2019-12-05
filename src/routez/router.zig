@@ -3,9 +3,7 @@ const Allocator = std.mem.Allocator;
 const mem = std.mem;
 const math = std.math;
 const assert = std.debug.assert;
-const builtin = @import("builtin");
-const TypeInfo = builtin.TypeInfo;
-const TypeId = builtin.TypeId;
+const meta = std.meta;
 usingnamespace @import("http.zig");
 
 pub const HandlerFn = async fn handle(Request, Response) anyerror!void;
@@ -42,7 +40,7 @@ pub fn Router(comptime handlers: var) HandlerFn {
             inline for (routes) |route| {
                 comptime var type_info = @typeInfo(@typeOf(route.handler)).Fn;
                 comptime var err: ?type = switch (@typeId(type_info.return_type.?)) {
-                    TypeId.ErrorUnion => @typeInfo(type_info.return_type.?).ErrorUnion.error_set,
+                    .ErrorUnion => @typeInfo(type_info.return_type.?).ErrorUnion.error_set,
                     else => null,
                 };
                 var method = route.method;
@@ -87,14 +85,14 @@ pub const Route = struct {
     handler: var,
 };
 
-/// returns 1 if request matched route
+/// returns true if request matched route
 pub fn match(
     comptime route: Route,
     comptime Errs: ?type,
     req: Request,
     res: Response,
     path: []const u8,
-) if (Errs != null) Errs.?!bool else bool {
+) if (Errs != null) Errs.?!bool else bool {// TODO this can be improved
     const handler = route.handler;
     const has_args = @typeInfo(@typeOf(handler)).Fn.args.len == 3;
     const Args = if (has_args) @typeInfo(@typeInfo(@typeOf(handler)).Fn.args[2].arg_type.?).Pointer.child else void;
@@ -163,7 +161,7 @@ pub fn match(
                 },
                 '{' => {
                     if (!has_args) {
-                        @compileError("handler does not accept path arguments");
+                        @compileError("handler does not take path arguments");
                     }
                     optional = false;
                     state = .Format;
@@ -334,27 +332,21 @@ pub fn match(
     return true;
 }
 
-fn canUse(comptime Args: type, field_name: []const u8, used: []bool) void {
-    const found = blk: for (@typeInfo(Args).Struct.fields) |f, i| {
-        if (mem.eql(u8, field_name, f.name)) {
-            if (used[i]) {
-                @compileError("argument '" ++ field_name ++ "' already used");
-            } else {
-                used[i] = true;
-                break :blk true;
-            }
-        }
-    } else false;
-
-    if (!found) {
+fn canUse(comptime Args: type, comptime field_name: []const u8, used: []bool) void {
+    const index = meta.fieldIndex(Args, field_name) orelse {
         @compileError("handler does not take argument '" ++ field_name ++ "'");
+    };
+    if (used[index]) {
+        @compileError("argument '" ++ field_name ++ "' already used");
+    } else {
+        used[index] = true;
     }
 }
 
 fn verifyField(comptime field: type, number: *bool) void {
-    number.* = @typeId(field) == TypeId.Int;
+    number.* = @typeId(field) == .Int;
     if (!number.*) {
-        assert(@typeInfo(field) == TypeId.Pointer);
+        assert(@typeInfo(field) == .Pointer);
         const ptr = @typeInfo(field).Pointer;
         assert(ptr.is_const and ptr.size == .Slice and ptr.child == u8);
     }
