@@ -11,14 +11,14 @@ pub fn parse(req: *Request, ctx: *Context) !void {
     var cur = ctx.index;
 
     // method
-    if (!try seek(ctx, ' ')) {
+    if (!seek(ctx, ' ')) {
         return error.NoMethod;
     }
     req.method = ctx.buf[cur .. ctx.index - 1];
     cur = ctx.index;
 
     // path
-    if (!try seek(ctx, ' ')) {
+    if (!seek(ctx, ' ')) {
         return error.NoPath;
     }
     if (req.path.len > 1) {
@@ -31,7 +31,7 @@ pub fn parse(req: *Request, ctx: *Context) !void {
     cur = ctx.index;
 
     // version
-    if (!try seek(ctx, '\r')) {
+    if (!seek(ctx, '\r')) {
         return error.NoVersion;
     }
     req.version = try Version.fromString(ctx.buf[cur .. ctx.index - 1]);
@@ -50,10 +50,6 @@ pub fn parse(req: *Request, ctx: *Context) !void {
     try expect(ctx, '\r');
     try expect(ctx, '\n');
 
-    // read to end
-    if (!is_test) {
-        while ((try ctx.read()) != 0) {}
-    }
     req.body = ctx.buf[ctx.index..ctx.count];
 }
 
@@ -62,39 +58,36 @@ fn parseHeaders(h: *Headers, ctx: *Context) !void {
     var cur = ctx.index;
 
     while (ctx.buf[cur] != '\r') {
-        if (!try seek(ctx, ':')) {
+        if (!seek(ctx, ':')) {
             return error.NoName;
         }
         name = ctx.buf[cur .. ctx.index - 1];
         cur = ctx.index;
 
-        if (!try seek(ctx, '\r')) {
+        if (!seek(ctx, '\r')) {
             return error.NoValue;
         }
         try expect(ctx, '\n');
 
         switch (ctx.buf[ctx.index]) {
             '\t', ' ' => { // obs-fold
-                if (!try seek(ctx, '\r')) {
+                if (!seek(ctx, '\r')) {
                     return error.InvalidObsFold;
                 }
                 try expect(ctx, '\n');
             },
             else => {},
         }
-        // std.debug.warn("|{}|{}|\n", name, ctx.buf[cur..ctx.index - 2]);
         try h.put(name, ctx.buf[cur .. ctx.index - 2]);
         cur = ctx.index;
     }
 }
 
 // index is after first `c`
-fn seek(ctx: *Context, c: u8) !bool {
+fn seek(ctx: *Context, c: u8) bool {
     while (true) {
         if (ctx.index >= ctx.count) {
-            if ((try ctx.read()) == 0) {
-                return false;
-            }
+            return false;
         } else if (ctx.buf[ctx.index] == c) {
             ctx.index += 1;
             return true;
@@ -107,9 +100,7 @@ fn seek(ctx: *Context, c: u8) !bool {
 // index is after `c`
 fn expect(ctx: *Context, c: u8) !void {
     if (ctx.count < ctx.index + 1) {
-        if (!is_test and (try ctx.read()) == 0) {
-            return error.UnexpectedEof;
-        }
+        return error.UnexpectedEof;
     }
     if (ctx.buf[ctx.index] == c) {
         ctx.index += 1;
@@ -119,9 +110,6 @@ fn expect(ctx: *Context, c: u8) !void {
 }
 
 const alloc = std.heap.direct_allocator;
-
-/// no event loop is available for tests
-const is_test = @import("builtin").is_test;
 
 test "parse headers" {
     var b = try mem.dupe(alloc, u8, "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:67.0) Gecko/20100101 Firefox/67.0\r\n" ++

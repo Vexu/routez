@@ -23,7 +23,6 @@ pub const Server = struct {
     const DiscardStack = std.atomic.Stack(*Context);
 
     pub const Config = struct {
-        multithreaded: bool = true,
         keepalive_time: u64 = 5000,
         max_request_size: u32 = 1024 * 1024,
         stack_size: usize = 4 * 1024 * 1024,
@@ -75,16 +74,9 @@ pub const Server = struct {
             context.server.allocator.free(context.buf);
         }
 
-        pub fn read(context: *Context) !usize {
-            if (context.count != 0) return 0; // TODO waitFdReadable
-            const count = try context.file.read(context.buf[context.count..]);
-            context.count += count;
-            return count;
-        }
-
-        pub fn reset(context: *Context) void {
-            context.count = 0;
+        pub fn read(context: *Context) !void {
             context.index = 0;
+            context.count = try context.file.read(context.buf);
         }
     };
 
@@ -167,7 +159,7 @@ pub const Server = struct {
     async fn handleHttp(ctx: *Context) !Upgrade {
         var buf = try std.Buffer.initSize(ctx.server.allocator, 0);
         defer buf.deinit();
-        var out_stream = BufferOutStream.init(&buf);
+        var body_stream = BufferOutStream.init(&buf);
 
         // for use in headers and allocations in handlers
         var arena = ArenaAllocator.init(ctx.server.allocator);
@@ -186,9 +178,10 @@ pub const Server = struct {
             var res = response.Response{
                 .status_code = undefined,
                 .headers = Headers.init(alloc),
-                .body = out_stream,
+                .body = body_stream,
                 .allocator = alloc,
             };
+            try ctx.read();
 
             if (parser.parse(&req, ctx)) {
                 var frame = @asyncCall(ctx.stack, {}, ctx.server.handler, &req, &res);
@@ -207,14 +200,15 @@ pub const Server = struct {
             arena.deinit();
             arena = ArenaAllocator.init(ctx.server.allocator);
             buf.resize(0) catch unreachable;
-            ctx.reset();
             // TODO keepalive here
             return .None;
         }
         return .None;
     }
 
-    fn writeResponse(server: *Server, stream: *File.OutStream.Stream, req: Request, res: Response) !void {
+    fn writeResponse(server: *Server, out: *File.OutStream.Stream, req: Request, res: Response) !void {
+        var buf_stream = std.io.BufferedOutStream(File.WriteError).init(out);
+        const stream = &buf_stream.stream;
         const body = res.body.buffer.toSlice();
         const is_head = mem.eql(u8, req.method, Method.Head);
 
@@ -233,6 +227,7 @@ pub const Server = struct {
         if (!is_head) {
             try stream.write(body);
         }
+        try buf_stream.flush();
     }
 
     fn defaultErrorHandler(err: anyerror, req: Request, res: Response) !void {
