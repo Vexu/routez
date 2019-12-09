@@ -55,7 +55,7 @@ pub const Response = struct {
         try res.body.stream.write(bytes);
     }
 
-    pub fn print(res: *Response, comptime format: []const u8, args: ...) WriteError!void {
+    pub fn print(res: *Response, comptime format: []const u8, args: var) WriteError!void {
         try res.setType(mime.html);
         try res.body.stream.print(format, args);
     }

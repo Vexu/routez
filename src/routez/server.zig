@@ -68,7 +68,6 @@ pub const Server = struct {
         }
 
         pub fn deinit(context: *Context) void {
-            await context.frame;
             context.file.close();
             context.server.allocator.free(context.stack);
             context.server.allocator.free(context.buf);
@@ -86,7 +85,7 @@ pub const Server = struct {
         None,
     };
 
-    pub fn init(allocator: *Allocator, config: Config, comptime handlers: var) Server {
+    pub fn init(allocator: *Allocator, config: Config, handlers: var) Server {
         return Server{
             .server = StreamServer.init(.{}),
             .handler = Router(handlers),
@@ -143,7 +142,7 @@ pub const Server = struct {
         defer context.server.discards.push(&context.node);
 
         const up = handleHttp(context) catch |e| {
-            std.debug.warn("error in http handler: {}\n", e);
+            std.debug.warn("error in http handler: {}\n", .{e});
             return;
         };
 
@@ -212,16 +211,16 @@ pub const Server = struct {
         const body = res.body.buffer.toSlice();
         const is_head = mem.eql(u8, req.method, Method.Head);
 
-        try stream.print("{} {} {}\r\n", req.version.toString(), @enumToInt(res.status_code), res.status_code.toString());
+        try stream.print("{} {} {}\r\n", .{req.version.toString(), @enumToInt(res.status_code), res.status_code.toString()});
 
         for (res.headers.list.toSlice()) |header| {
-            try stream.print("{}: {}\r\n", header.name, header.value);
+            try stream.print("{}: {}\r\n", .{header.name, header.value});
         }
         try stream.write("connection: close\r\n");
         if (is_head) {
             try stream.write("content-length: 0\r\n\r\n");
         } else {
-            try stream.print("content-length: {}\r\n\r\n", body.len);
+            try stream.print("content-length: {}\r\n\r\n", .{body.len});
         }
 
         if (!is_head) {
@@ -245,7 +244,7 @@ pub const Server = struct {
                     \\    <p>Requested URL {} was not found.</p>
                     \\</body>
                     \\</html>
-                , req.path);
+                , .{req.path});
             },
             else => {
                 if (builtin.mode == .Debug) {
@@ -261,7 +260,7 @@ pub const Server = struct {
                         \\    <p>Debug info - Error: {}</p>
                         \\</body>
                         \\</html>
-                    , @errorName(err));
+                    , .{@errorName(err)});
                 } else {
                     res.status_code = .InternalServerError;
                     try res.write(
@@ -272,7 +271,6 @@ pub const Server = struct {
                         \\</head>
                         \\<body>
                         \\    <h1>Internal Server Error</h1>
-                        \\    <p>Requested URL {} was not found.</p>
                         \\</body>
                         \\</html>
                     );
