@@ -183,7 +183,7 @@ pub const Server = struct {
             try ctx.read();
 
             if (parser.parse(&req, ctx)) {
-                var frame = @asyncCall(ctx.stack, {}, ctx.server.handler, &req, &res);
+                var frame = @asyncCall(ctx.stack, {}, ctx.server.handler, &req, &res, req.path);
                 await frame catch |e| {
                     try defaultErrorHandler(e, &req, &res);
                 };
@@ -211,10 +211,10 @@ pub const Server = struct {
         const body = res.body.buffer.toSlice();
         const is_head = mem.eql(u8, req.method, Method.Head);
 
-        try stream.print("{} {} {}\r\n", .{req.version.toString(), @enumToInt(res.status_code), res.status_code.toString()});
+        try stream.print("{} {} {}\r\n", .{ req.version.toString(), @enumToInt(res.status_code), res.status_code.toString() });
 
         for (res.headers.list.toSlice()) |header| {
-            try stream.print("{}: {}\r\n", .{header.name, header.value});
+            try stream.print("{}: {}\r\n", .{ header.name, header.value });
         }
         try stream.write("connection: close\r\n");
         if (is_head) {

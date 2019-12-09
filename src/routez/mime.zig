@@ -6,7 +6,7 @@ const Mime = struct {
     extension: []const u8,
     mime: []const u8,
     hash: u32,
-    
+
     fn init(extension: []const u8, mime: []const u8) Mime {
         return .{
             .extension = extension,

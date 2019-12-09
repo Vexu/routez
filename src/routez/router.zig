@@ -6,7 +6,7 @@ const assert = std.debug.assert;
 const meta = std.meta;
 usingnamespace @import("http.zig");
 
-pub const HandlerFn = async fn handle(Request, Response) anyerror!void;
+pub const HandlerFn = async fn handle(Request, Response, []const u8) anyerror!void;
 
 pub const ErrorHandler = struct {
     handler: fn (Request, Response) void,
@@ -14,26 +14,24 @@ pub const ErrorHandler = struct {
 };
 
 pub fn Router(comptime handlers: var) HandlerFn {
-    const T = @typeOf(handlers);
-    const fields = std.meta.fields(T);
     comptime var routes: []const Route = &[_]Route{};
     comptime var err_handlers: []const ErrorHandler = &[_]ErrorHandler{};
-    inline for (fields) |field| {
-        switch (field.field_type) {
+    inline for (handlers) |handler| {
+        switch (@typeOf(handler)) {
             ErrorHandler => {
-                err_handlers = (err_handlers ++ &[_]ErrorHandler{@field(handlers, field.name)});
+                err_handlers = (err_handlers ++ &[_]ErrorHandler{handler});
             },
             Route => {
-                routes = (routes ++ &[_]Route{@field(handlers, field.name)});
+                routes = (routes ++ &[_]Route{handler});
             },
-            else => |f_type| @compileError("unsupported route type " ++ @typeName(f_type)),
+            else => |f_type| @compileError("unsupported handler type " ++ @typeName(f_type)),
         }
     }
     if (routes.len == 0) {
         @compileError("Router must have at least one route");
     }
     return struct {
-        async fn handle(req: Request, res: Response) !void {
+        async fn handle(req: Request, res: Response, path: []const u8) !void {
             if (req.path[0] == '*') {
                 @panic("Todo server request");
             }
@@ -43,16 +41,15 @@ pub fn Router(comptime handlers: var) HandlerFn {
                     .ErrorUnion => @typeInfo(type_info.return_type.?).ErrorUnion.error_set,
                     else => null,
                 };
-                var method = route.method;
 
                 // try matching path to route
                 if (err == null) {
-                    if (match(route, err, req, res, req.path)) {
+                    if (match(route, err, req, res, path)) {
                         res.status_code = .Ok;
                         return;
                     }
                 } else {
-                    if (match(route, err, req, res, req.path) catch |e| {
+                    if (match(route, err, req, res, path) catch |e| {
                         if (err_handlers.len == 0) {
                             return e;
                         } else {
@@ -92,7 +89,7 @@ pub fn match(
     req: Request,
     res: Response,
     path: []const u8,
-) if (Errs != null) Errs.?!bool else bool {// TODO this can be improved
+) if (Errs != null) Errs.?!bool else bool { // TODO this can be improved
     const handler = route.handler;
     const has_args = @typeInfo(@typeOf(handler)).Fn.args.len == 3;
     const Args = if (has_args) @typeInfo(@typeInfo(@typeOf(handler)).Fn.args[2].arg_type.?).Pointer.child else void;

@@ -88,67 +88,13 @@ fn createRoute(method: ?[]const u8, path: []const u8, handler: var) Route {
     };
 }
 
-pub fn subRoute(allocator: *std.mem.Allocator, route: []const u8, comptime handlers: var) Route {
-    const T = @typeOf(handlers);
-    const fields = std.meta.fields(T);
-    comptime var routes: []const Route = &[_]Route{};
-    comptime var err_handlers: []const ErrorHandler = &[_]ErrorHandler{};
-    inline for (fields) |field| {
-        switch (field.field_type) {
-            ErrorHandler => {
-                err_handlers = (err_handlers ++ &[_]ErrorHandler{@field(handlers, field.name)});
-            },
-            Route => {
-                routes = (routes ++ &[_]Route{@field(handlers, field.name)});
-            },
-            else => |f_type| @compileError("unsupported route type " ++ @typeName(f_type)),
-        }
-    }
-    if (routes.len == 0) {
-        @compileError("Router must have at least one route");
-    }
-    const handler = struct {
+pub fn subRoute(route: []const u8, handlers: var) Route {
+    const h = Router(handlers);
+    const handler = struct{
         fn handle(req: Request, res: Response, args: *const struct {
             path: []const u8,
         }) !void {
-            inline for (routes) |r| {
-                comptime var type_info = @typeInfo(@typeOf(r.handler)).Fn;
-                comptime var err: ?type = switch (@typeId(type_info.return_type.?)) {
-                    .ErrorUnion => @typeInfo(type_info.return_type.?).ErrorUnion.error_set,
-                    else => null,
-                };
-                var method = r.method;
-
-                // try matching path to route
-                if (err == null) {
-                    if (match(r, err, req, res, args.path)) {
-                        res.status_code = .Ok;
-                        return;
-                    }
-                } else {
-                    if (match(r, err, req, res, args.path) catch |e| {
-                        if (err_handlers.len == 0) {
-                            return e;
-                        } else {
-                            return handleError(e, req, res);
-                        }
-                    }) {
-                        res.status_code = .Ok;
-                        return;
-                    }
-                }
-            }
-            // not found
-            return if (err_handlers.len == 0) error.FileNotFound else return handleError(error.FileNotFound, req, res);
-        }
-
-        fn handleError(err: anyerror, req: Request, res: Response) !void {
-            inline for (err_handlers) |e| {
-                if (err == e.err) {
-                    return e.handler(req, res);
-                }
-            }
-            return err;
+            return h(req, res, args.path);
         }
     }.handle;
 
@@ -192,7 +138,7 @@ test "index" {
         .version = .Http11,
     };
     var res: response = undefined;
-    try noasync handler(&req, &res);
+    try noasync handler(&req, &res, req.path);
     expect(res.status_code == .Ok);
 }
 
@@ -213,7 +159,7 @@ test "args" {
     };
     var res: response = undefined;
 
-    try noasync handler(&req, &res);
+    try noasync handler(&req, &res, req.path);
 }
 
 fn argHandler(req: Request, res: Response, args: *const struct {
@@ -235,7 +181,7 @@ test "delim string" {
     };
     var res: response = undefined;
 
-    try noasync handler(&req, &res);
+    try noasync handler(&req, &res, req.path);
 }
 
 fn delimHandler(req: Request, res: Response, args: *const struct {
@@ -245,7 +191,7 @@ fn delimHandler(req: Request, res: Response, args: *const struct {
 }
 
 test "subRoute" {
-    const handler = comptime Router(.{subRoute(alloc, "/sub", .{get("/other", indexHandler)})});
+    const handler = comptime Router(.{subRoute("/sub", .{get("/other", indexHandler)})});
 
     var req = request{
         .method = Method.Get,
@@ -257,7 +203,7 @@ test "subRoute" {
     };
     var res: response = undefined;
 
-    try noasync handler(&req, &res);
+    try noasync handler(&req, &res, req.path);
     expect(res.status_code == .Ok);
 }
 
@@ -285,7 +231,7 @@ test "static files" {
     };
 
     // ignore file not found error
-    noasync handler(&req, &res) catch |e| switch (e) {
+    noasync handler(&req, &res, req.path) catch |e| switch (e) {
         error.FileNotFound => return,
         else => return e,
     };
@@ -305,6 +251,6 @@ test "optional char" {
         .version = .Http11,
     };
     var res: response = undefined;
-    try noasync handler(&req, &res);
+    try noasync handler(&req, &res, req.path);
     expect(res.status_code == .Ok);
 }
