@@ -49,7 +49,7 @@ pub fn custom(method: []const u8, path: []const u8, handler: var) Route {
 
 /// add route with given method
 fn createRoute(method: ?[]const u8, path: []const u8, handler: var) Route {
-    const t = @typeInfo(@typeOf(handler));
+    const t = @typeInfo(@TypeOf(handler));
     if (t != .Fn) {
         @compileError("handler must be a function");
     }
@@ -90,7 +90,7 @@ fn createRoute(method: ?[]const u8, path: []const u8, handler: var) Route {
 
 pub fn subRoute(route: []const u8, handlers: var) Route {
     const h = Router(handlers);
-    const handler = struct{
+    const handler = struct {
         fn handle(req: Request, res: Response, args: *const struct {
             path: []const u8,
         }) !void {

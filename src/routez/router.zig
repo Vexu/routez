@@ -17,7 +17,7 @@ pub fn Router(comptime handlers: var) HandlerFn {
     comptime var routes: []const Route = &[_]Route{};
     comptime var err_handlers: []const ErrorHandler = &[_]ErrorHandler{};
     inline for (handlers) |handler| {
-        switch (@typeOf(handler)) {
+        switch (@TypeOf(handler)) {
             ErrorHandler => {
                 err_handlers = (err_handlers ++ &[_]ErrorHandler{handler});
             },
@@ -36,7 +36,7 @@ pub fn Router(comptime handlers: var) HandlerFn {
                 @panic("Todo server request");
             }
             inline for (routes) |route| {
-                comptime var type_info = @typeInfo(@typeOf(route.handler)).Fn;
+                comptime var type_info = @typeInfo(@TypeOf(route.handler)).Fn;
                 comptime var err: ?type = switch (@typeId(type_info.return_type.?)) {
                     .ErrorUnion => @typeInfo(type_info.return_type.?).ErrorUnion.error_set,
                     else => null,
@@ -91,8 +91,8 @@ pub fn match(
     path: []const u8,
 ) if (Errs != null) Errs.?!bool else bool { // TODO this can be improved
     const handler = route.handler;
-    const has_args = @typeInfo(@typeOf(handler)).Fn.args.len == 3;
-    const Args = if (has_args) @typeInfo(@typeInfo(@typeOf(handler)).Fn.args[2].arg_type.?).Pointer.child else void;
+    const has_args = @typeInfo(@TypeOf(handler)).Fn.args.len == 3;
+    const Args = if (has_args) @typeInfo(@typeInfo(@TypeOf(handler)).Fn.args[2].arg_type.?).Pointer.child else void;
 
     var args: Args = undefined;
 
@@ -221,7 +221,7 @@ pub fn match(
                                         field_name = fmt[0..fi];
 
                                         canUse(Args, field_name, &used);
-                                        field_type = @typeOf(@field(args, field_name));
+                                        field_type = @TypeOf(@field(args, field_name));
                                         verifyField(field_type, &number);
 
                                         if (number) {
@@ -260,7 +260,7 @@ pub fn match(
                             field_name = fmt[0..];
 
                             canUse(Args, field_name, &used);
-                            field_type = @typeOf(@field(args, field_name));
+                            field_type = @TypeOf(@field(args, field_name));
                             verifyField(field_type, &number);
                         }
                         if (radix < 2 or radix > 36) {
