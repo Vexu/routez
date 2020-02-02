@@ -3,7 +3,7 @@ HTTP server for Zig. [See it in action](http://routez.vexu.eu)
 
 ## Example
 ### [basic](examples/basic.zig)
-build with `./build_examples.sh` ([see #855](https://github.com/ziglang/zig/issues/855)) and run with `./zig-cache/basic`
+Run with `zig build basic`
 ```Zig
 const std = @import("std");
 const Address = std.net.Address;
