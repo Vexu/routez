@@ -68,9 +68,9 @@ fn createRoute(method: ?[]const u8, path: []const u8, handler: var) Route {
 
     if (f.args.len == 3) {
         const arg_type = f.args[2].arg_type orelse void;
-        if (@typeId(arg_type) != .Pointer or blk: {
+        if (@typeInfo(arg_type) != .Pointer or blk: {
             const ptr = @typeInfo(arg_type).Pointer;
-            break :blk !ptr.is_const or ptr.size != .One or @typeId(ptr.child) != .Struct;
+            break :blk !ptr.is_const or ptr.size != .One or @typeInfo(ptr.child) != .Struct;
         }) {
             @compileError("third argument of a handler must be a const pointer to a struct containing all path arguments it takes");
         }

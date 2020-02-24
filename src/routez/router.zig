@@ -37,7 +37,7 @@ pub fn Router(comptime handlers: var) HandlerFn {
             }
             inline for (routes) |route| {
                 comptime var type_info = @typeInfo(@TypeOf(route.handler)).Fn;
-                comptime var err: ?type = switch (@typeId(type_info.return_type.?)) {
+                comptime var err: ?type = switch (@typeInfo(type_info.return_type.?)) {
                     .ErrorUnion => @typeInfo(type_info.return_type.?).ErrorUnion.error_set,
                     else => null,
                 };
@@ -341,7 +341,7 @@ fn canUse(comptime Args: type, comptime field_name: []const u8, used: []bool) vo
 }
 
 fn verifyField(comptime field: type, number: *bool) void {
-    number.* = @typeId(field) == .Int;
+    number.* = @typeInfo(field) == .Int;
     if (!number.*) {
         assert(@typeInfo(field) == .Pointer);
         const ptr = @typeInfo(field).Pointer;
