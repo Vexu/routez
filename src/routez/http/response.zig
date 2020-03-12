@@ -3,10 +3,16 @@ const mime = @import("../mime.zig");
 usingnamespace @import("headers.zig");
 usingnamespace @import("common.zig");
 
+pub const BodyOutStream = std.io.OutStream(*std.ArrayList(u8), error{OutOfMemory}, writeAppend);
+fn writeAppend(self: *std.ArrayList(u8), data: []const u8) !usize {
+    try self.appendSlice(data);
+    return data.len;
+}
+
 pub const Response = struct {
     status_code: StatusCode,
     headers: Headers,
-    body: std.io.BufferOutStream,
+    body: BodyOutStream,
 
     /// arena allocator that frees everything when response has been sent
     allocator: *std.mem.Allocator,
@@ -23,22 +29,20 @@ pub const Response = struct {
 
     // todo improve, cache control
     pub fn sendFile(res: *Response, path: []const u8) SendFileError!void {
-        var in_stream = (std.fs.cwd().openRead(path) catch |err| switch (err) {
+        var in_file = (std.fs.cwd().openRead(path) catch |err| switch (err) {
             error.AccessDenied,
             error.FileNotFound,
             => |e| return e,
             else => return error.SystemError,
-        }).inStream();
-        defer in_stream.file.close();
-        const stream = &in_stream.stream;
+        });
+        defer in_file.close();
 
-        const content = stream.readAllAlloc(res.allocator, 1024 * 1024) catch |err| switch (err) {
-            error.OutOfMemory,
-            => |e| return e,
+        const content = in_file.inStream().readAllAlloc(res.allocator, 1024 * 1024) catch |err| switch (err) {
+            error.OutOfMemory => |e| return e,
             else => return error.SystemError,
         };
         defer res.allocator.free(content);
-        try res.body.stream.write(content);
+        try res.body.writeAll(content);
 
         var mimetype: []const u8 = mime.default;
 
@@ -52,11 +56,11 @@ pub const Response = struct {
 
     pub fn write(res: *Response, bytes: []const u8) WriteError!void {
         try res.setType(mime.html);
-        try res.body.stream.write(bytes);
+        try res.body.writeAll(bytes);
     }
 
     pub fn print(res: *Response, comptime format: []const u8, args: var) WriteError!void {
         try res.setType(mime.html);
-        try res.body.stream.print(format, args);
+        try res.body.print(format, args);
     }
 };

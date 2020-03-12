@@ -221,12 +221,12 @@ test "static files" {
         .version = .Http11,
         .headers = undefined,
     };
-    var buf = try std.Buffer.initSize(alloc, 0);
+    var buf = std.ArrayList(u8).init(alloc);
     defer buf.deinit();
     var res = response{
         .status_code = .Processing,
         .headers = Headers.init(alloc),
-        .body = std.io.BufferOutStream.init(&buf),
+        .body = .{ .context = &buf },
         .allocator = alloc,
     };
 
@@ -236,7 +236,7 @@ test "static files" {
         else => return e,
     };
     expect(std.mem.eql(u8, (try res.headers.get(alloc, "content-type")).?[0].value, "text/plain;charset=UTF-8"));
-    expect(std.mem.eql(u8, res.body.buffer.toSlice(), "Some text\n"));
+    expect(std.mem.eql(u8, res.body.context.toSlice(), "Some text\n"));
 }
 
 test "optional char" {

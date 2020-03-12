@@ -5,7 +5,6 @@ const ArenaAllocator = std.heap.ArenaAllocator;
 const StreamServer = std.net.StreamServer;
 const Address = std.net.Address;
 const File = std.fs.File;
-const BufferOutStream = std.io.BufferOutStream;
 const builtin = @import("builtin");
 const request = @import("http/request.zig");
 const response = @import("http/response.zig");
@@ -33,7 +32,7 @@ pub const Server = struct {
         buf: []u8,
         index: usize = 0,
         count: usize = 0,
-        out_stream: File.OutStream,
+        out_stream: std.io.BufferedOutStream(4096, File.OutStream),
         server: *Server,
         file: File,
 
@@ -51,10 +50,10 @@ pub const Server = struct {
             var buf = try server.allocator.alloc(u8, server.config.max_request_size);
             errdefer server.allocator.free(buf);
 
-            ctx.* = Context{
+            ctx.* = .{
                 .stack = stack,
                 .buf = buf,
-                .out_stream = file.outStream(),
+                .out_stream = std.io.bufferedOutStream(file.outStream()),
                 .server = server,
                 .file = file,
                 .frame = undefined,
@@ -86,7 +85,7 @@ pub const Server = struct {
     };
 
     pub fn init(allocator: *Allocator, config: Config, handlers: var) Server {
-        return Server{
+        return .{
             .server = StreamServer.init(.{}),
             .handler = Router(handlers),
             .allocator = allocator,
@@ -121,8 +120,7 @@ pub const Server = struct {
                 error.ProtocolFailure,
                 error.Unexpected,
                 => continue,
-                error.BlockedByFirewall,
-                => |e| return e,
+                error.BlockedByFirewall => |e| return e,
             };
             var context = Context.init(server, conn.file) catch {
                 conn.file.close();
@@ -156,9 +154,8 @@ pub const Server = struct {
     }
 
     async fn handleHttp(ctx: *Context) !Upgrade {
-        var buf = try std.Buffer.initSize(ctx.server.allocator, 0);
+        var buf = std.ArrayList(u8).init(ctx.server.allocator);
         defer buf.deinit();
-        var body_stream = BufferOutStream.init(&buf);
 
         // for use in headers and allocations in handlers
         var arena = ArenaAllocator.init(ctx.server.allocator);
@@ -177,7 +174,7 @@ pub const Server = struct {
             var res = response.Response{
                 .status_code = undefined,
                 .headers = Headers.init(alloc),
-                .body = body_stream,
+                .body = .{ .context = &buf },
                 .allocator = alloc,
             };
             try ctx.read();
@@ -189,11 +186,13 @@ pub const Server = struct {
                 };
             } else |e| {
                 try defaultErrorHandler(e, &req, &res);
-                try writeResponse(ctx.server, &ctx.out_stream.stream, &req, &res);
+                try writeResponse(ctx.server, ctx.out_stream.outStream(), &req, &res);
+                try ctx.out_stream.flush();
                 return .None;
             }
 
-            try writeResponse(ctx.server, &ctx.out_stream.stream, &req, &res);
+            try writeResponse(ctx.server, ctx.out_stream.outStream(), &req, &res);
+            try ctx.out_stream.flush();
 
             // reset for next request
             arena.deinit();
@@ -205,10 +204,8 @@ pub const Server = struct {
         return .None;
     }
 
-    fn writeResponse(server: *Server, out: *File.OutStream.Stream, req: Request, res: Response) !void {
-        var buf_stream = std.io.BufferedOutStream(File.WriteError).init(out);
-        const stream = &buf_stream.stream;
-        const body = res.body.buffer.toSlice();
+    fn writeResponse(server: *Server, stream: var, req: Request, res: Response) !void {
+        const body = res.body.context.toSlice();
         const is_head = mem.eql(u8, req.method, Method.Head);
 
         try stream.print("{} {} {}\r\n", .{ req.version.toString(), @enumToInt(res.status_code), res.status_code.toString() });
@@ -216,17 +213,16 @@ pub const Server = struct {
         for (res.headers.list.toSlice()) |header| {
             try stream.print("{}: {}\r\n", .{ header.name, header.value });
         }
-        try stream.write("connection: close\r\n");
+        try stream.writeAll("connection: close\r\n");
         if (is_head) {
-            try stream.write("content-length: 0\r\n\r\n");
+            try stream.writeAll("content-length: 0\r\n\r\n");
         } else {
             try stream.print("content-length: {}\r\n\r\n", .{body.len});
         }
 
         if (!is_head) {
-            try stream.write(body);
+            try stream.writeAll(body);
         }
-        try buf_stream.flush();
     }
 
     fn defaultErrorHandler(err: anyerror, req: Request, res: Response) !void {
