@@ -1,17 +1,20 @@
+name: CI
 on: [push]
 jobs:
-  test:
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-    runs-on: ${{matrix.os}}
-    steps:
-      - uses: actions/checkout@v2
-      - uses: goto-bus-stop/setup-zig@v1.2.1
-        with:
-          version: master
-      - run: zig build test
-  test:
+  # test:
+  #   strategy:
+  #     matrix:
+  #       os: [ubuntu-latest]
+  #   runs-on: ${{matrix.os}}
+  #   steps:
+  #     - uses: actions/checkout@v2
+  #       with:
+  #         args: git submodule update --init --recursive
+  #     - uses: goto-bus-stop/setup-zig@v1.2.1
+  #       with:
+  #         version: master
+  #     - run: zig build test
+  fmt:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
