@@ -124,7 +124,7 @@ pub fn static(local_path: []const u8, remote_path: ?[]const u8) Route {
 // for tests
 const request = @import("http/request.zig").Request;
 const response = @import("http/response.zig").Response;
-const alloc = std.heap.direct_allocator;
+const alloc = std.heap.page_allocator;
 
 test "index" {
     const handler = comptime Router(.{get("/", indexHandler)});
@@ -236,7 +236,7 @@ test "static files" {
         else => return e,
     };
     expect(std.mem.eql(u8, (try res.headers.get(alloc, "content-type")).?[0].value, "text/plain;charset=UTF-8"));
-    expect(std.mem.eql(u8, res.body.context.toSlice(), "Some text\n"));
+    expect(std.mem.eql(u8, res.body.context.items, "Some text\n"));
 }
 
 test "optional char" {

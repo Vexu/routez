@@ -29,7 +29,7 @@ pub const Response = struct {
 
     // todo improve, cache control
     pub fn sendFile(res: *Response, path: []const u8) SendFileError!void {
-        var in_file = (std.fs.cwd().openRead(path) catch |err| switch (err) {
+        var in_file = (std.fs.cwd().openFile(path, .{}) catch |err| switch (err) {
             error.AccessDenied,
             error.FileNotFound,
             => |e| return e,

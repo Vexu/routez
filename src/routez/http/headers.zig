@@ -58,7 +58,7 @@ pub const Headers = struct {
 
     pub fn deinit(headers: Headers) void {
         const a = headers.list.allocator;
-        for (headers.list.toSlice()) |h| {
+        for (headers.list.items) |h| {
             a.free(h.name);
             a.free(h.value);
         }
@@ -68,13 +68,13 @@ pub const Headers = struct {
     pub fn get(headers: *const Headers, allocator: *Allocator, name: []const u8) Error!?[]const *Header {
         var list = ArrayList(*Header).init(allocator);
         errdefer list.deinit();
-        for (headers.list.toSlice()) |*h| {
+        for (headers.list.items) |*h| {
             if (mem.eql(u8, h.name, name)) {
                 const new = try list.addOne();
                 new.* = h;
             }
         }
-        if (list.len == 0) {
+        if (list.items.len == 0) {
             return null;
         } else {
             return list.toOwnedSlice();
@@ -86,7 +86,7 @@ pub const Headers = struct {
     // }
 
     pub fn has(h: *Headers, name: []const u8) bool {
-        for (headers.list.toSlice()) |*h| {
+        for (headers.list.items) |*h| {
             if (mem.eql(u8, h.name, name)) {
                 return true;
             }

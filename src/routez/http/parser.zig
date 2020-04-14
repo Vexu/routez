@@ -109,7 +109,7 @@ fn expect(ctx: *Context, c: u8) !void {
     }
 }
 
-const alloc = std.heap.direct_allocator;
+const alloc = std.heap.page_allocator;
 
 test "parse headers" {
     var b = try mem.dupe(alloc, u8, "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:67.0) Gecko/20100101 Firefox/67.0\r\n" ++
@@ -134,7 +134,7 @@ test "parse headers" {
     };
     try noasync parseHeaders(&h, &ctx);
 
-    var slice = h.list.toSlice();
+    var slice = h.list.items;
     t.expect(mem.eql(u8, slice[0].name, "user-agent"));
     t.expect(mem.eql(u8, slice[0].value, "Mozilla/5.0 (X11; Linux x86_64; rv:67.0) Gecko/20100101 Firefox/67.0"));
     t.expect(mem.eql(u8, slice[1].name, "accept"));

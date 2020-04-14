@@ -79,9 +79,9 @@ pub const Server = struct {
     };
 
     const Upgrade = enum {
-        WebSocket,
-        Http2,
-        None,
+        webSocket,
+        http2,
+        none,
     };
 
     pub fn init(allocator: *Allocator, config: Config, handlers: var) Server {
@@ -145,11 +145,11 @@ pub const Server = struct {
         };
 
         switch (up) {
-            .WebSocket => {
+            .webSocket => {
                 // handleWs(self, socket.handle) catch |e| {};
             },
-            .Http2 => {},
-            .None => {},
+            .http2 => {},
+            .none => {},
         }
     }
 
@@ -188,7 +188,7 @@ pub const Server = struct {
                 try defaultErrorHandler(e, &req, &res);
                 try writeResponse(ctx.server, ctx.out_stream.outStream(), &req, &res);
                 try ctx.out_stream.flush();
-                return .None;
+                return .none;
             }
 
             try writeResponse(ctx.server, ctx.out_stream.outStream(), &req, &res);
@@ -199,18 +199,18 @@ pub const Server = struct {
             arena = ArenaAllocator.init(ctx.server.allocator);
             buf.resize(0) catch unreachable;
             // TODO keepalive here
-            return .None;
+            return .none;
         }
-        return .None;
+        return .none;
     }
 
     fn writeResponse(server: *Server, stream: var, req: Request, res: Response) !void {
-        const body = res.body.context.toSlice();
+        const body = res.body.context.items;
         const is_head = mem.eql(u8, req.method, Method.Head);
 
         try stream.print("{} {} {}\r\n", .{ req.version.toString(), @enumToInt(res.status_code), res.status_code.toString() });
 
-        for (res.headers.list.toSlice()) |header| {
+        for (res.headers.list.items) |header| {
             try stream.print("{}: {}\r\n", .{ header.name, header.value });
         }
         try stream.writeAll("connection: close\r\n");
