@@ -138,7 +138,7 @@ test "index" {
         .version = .Http11,
     };
     var res: response = undefined;
-    try noasync handler(&req, &res, req.path);
+    try nosuspend handler(&req, &res, req.path);
     expect(res.status_code == .Ok);
 }
 
@@ -159,7 +159,7 @@ test "args" {
     };
     var res: response = undefined;
 
-    try noasync handler(&req, &res, req.path);
+    try nosuspend handler(&req, &res, req.path);
 }
 
 fn argHandler(req: Request, res: Response, args: *const struct {
@@ -181,7 +181,7 @@ test "delim string" {
     };
     var res: response = undefined;
 
-    try noasync handler(&req, &res, req.path);
+    try nosuspend handler(&req, &res, req.path);
 }
 
 fn delimHandler(req: Request, res: Response, args: *const struct {
@@ -203,7 +203,7 @@ test "subRoute" {
     };
     var res: response = undefined;
 
-    try noasync handler(&req, &res, req.path);
+    try nosuspend handler(&req, &res, req.path);
     expect(res.status_code == .Ok);
 }
 
@@ -231,7 +231,7 @@ test "static files" {
     };
 
     // ignore file not found error
-    noasync handler(&req, &res, req.path) catch |e| switch (e) {
+    nosuspend handler(&req, &res, req.path) catch |e| switch (e) {
         error.FileNotFound => return,
         else => return e,
     };
@@ -251,6 +251,6 @@ test "optional char" {
         .version = .Http11,
     };
     var res: response = undefined;
-    try noasync handler(&req, &res, req.path);
+    try nosuspend handler(&req, &res, req.path);
     expect(res.status_code == .Ok);
 }

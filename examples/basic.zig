@@ -1,7 +1,7 @@
 const std = @import("std");
 const Address = std.net.Address;
 usingnamespace @import("routez");
-const allocator = std.heap.direct_allocator;
+const allocator = std.heap.page_allocator;
 
 pub const io_mode = .evented;
 

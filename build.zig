@@ -12,17 +12,16 @@ pub fn build(b: *Builder) void {
 
     var basic = b.addExecutable("basic", "examples/basic.zig");
     basic.setBuildMode(mode);
-    var zuri = std.build.Pkg{
-        .name = "zuri",
-        .path = "zuri/src/zuri.zig",
-    };
     basic.addPackage(.{
         .name = "routez",
         .path = "src/routez.zig",
-        .dependencies = &[_]std.build.Pkg{zuri}, // no reason for this to not be const
+        .dependencies = &[_]std.build.Pkg{.{
+            .name = "zuri",
+            .path = "zuri/src/zuri.zig",
+        }},
     });
     basic.setOutputDir("zig-cache");
-    b.installArtifact(basic);
+    basic.install();
     const basic_step = b.step("basic", "Basic example");
     basic_step.dependOn(&basic.run().step);
 }

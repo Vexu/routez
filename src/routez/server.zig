@@ -119,6 +119,7 @@ pub const Server = struct {
                 error.SystemResources,
                 error.ProtocolFailure,
                 error.Unexpected,
+                error.PermissionDenied,
                 => continue,
                 error.BlockedByFirewall => |e| return e,
             };
@@ -136,7 +137,7 @@ pub const Server = struct {
         }
     }
 
-    async fn handleRequest(context: *Context) void {
+    fn handleRequest(context: *Context) callconv(.Async) void {
         defer context.server.discards.push(&context.node);
 
         const up = handleHttp(context) catch |e| {
@@ -153,7 +154,7 @@ pub const Server = struct {
         }
     }
 
-    async fn handleHttp(ctx: *Context) !Upgrade {
+    fn handleHttp(ctx: *Context) callconv(.Async) !Upgrade {
         var buf = std.ArrayList(u8).init(ctx.server.allocator);
         defer buf.deinit();
 

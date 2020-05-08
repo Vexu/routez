@@ -6,7 +6,7 @@ const assert = std.debug.assert;
 const meta = std.meta;
 usingnamespace @import("http.zig");
 
-pub const HandlerFn = async fn handle(Request, Response, []const u8) anyerror!void;
+pub const HandlerFn = fn handle(Request, Response, []const u8) callconv(.Async) anyerror!void;
 
 pub const ErrorHandler = struct {
     handler: fn (Request, Response) void,
@@ -31,7 +31,7 @@ pub fn Router(comptime handlers: var) HandlerFn {
         @compileError("Router must have at least one route");
     }
     return struct {
-        async fn handle(req: Request, res: Response, path: []const u8) !void {
+        fn handle(req: Request, res: Response, path: []const u8) callconv(.Async) !void {
             if (req.path[0] == '*') {
                 @panic("Todo server request");
             }

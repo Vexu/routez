@@ -132,7 +132,7 @@ test "parse headers" {
         .frame = undefined,
         .node = undefined,
     };
-    try noasync parseHeaders(&h, &ctx);
+    try parseHeaders(&h, &ctx);
 
     var slice = h.list.items;
     t.expect(mem.eql(u8, slice[0].name, "user-agent"));
@@ -167,7 +167,7 @@ test "HTTP/0.9" {
         .frame = undefined,
         .node = undefined,
     };
-    try noasync parse(&req, &ctx);
+    try parse(&req, &ctx);
     t.expect(mem.eql(u8, req.method, Method.Get));
     t.expect(mem.eql(u8, req.path, "/"));
     t.expect(req.version == .Http09);
@@ -194,7 +194,7 @@ test "HTTP/1.1" {
         .frame = undefined,
         .node = undefined,
     };
-    try noasync parse(&req, &ctx);
+    try parse(&req, &ctx);
     t.expect(mem.eql(u8, req.method, Method.Post));
     t.expect(mem.eql(u8, req.path, "/about"));
     t.expect(req.version == .Http11);
@@ -221,5 +221,5 @@ test "HTTP/3.0" {
         .frame = undefined,
         .node = undefined,
     };
-    t.expectError(error.UnsupportedVersion, noasync parse(&req, &ctx));
+    t.expectError(error.UnsupportedVersion, parse(&req, &ctx));
 }
