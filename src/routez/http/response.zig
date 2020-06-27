@@ -3,16 +3,10 @@ const mime = @import("../mime.zig");
 usingnamespace @import("headers.zig");
 usingnamespace @import("common.zig");
 
-pub const BodyOutStream = std.io.OutStream(*std.ArrayList(u8), error{OutOfMemory}, writeAppend);
-fn writeAppend(self: *std.ArrayList(u8), data: []const u8) !usize {
-    try self.appendSlice(data);
-    return data.len;
-}
-
 pub const Response = struct {
     status_code: StatusCode,
     headers: Headers,
-    body: BodyOutStream,
+    body: std.ArrayList(u8).Writer,
 
     /// arena allocator that frees everything when response has been sent
     allocator: *std.mem.Allocator,
@@ -37,7 +31,7 @@ pub const Response = struct {
         });
         defer in_file.close();
 
-        const content = in_file.inStream().readAllAlloc(res.allocator, 1024 * 1024) catch |err| switch (err) {
+        const content = in_file.reader().readAllAlloc(res.allocator, 1024 * 1024) catch |err| switch (err) {
             error.OutOfMemory => |e| return e,
             else => return error.SystemError,
         };
