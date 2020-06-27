@@ -175,7 +175,7 @@ pub const Server = struct {
             var res = response.Response{
                 .status_code = undefined,
                 .headers = Headers.init(alloc),
-                .body = .{ .context = &buf },
+                .body = buf.writer(),
                 .allocator = alloc,
             };
             try ctx.read();

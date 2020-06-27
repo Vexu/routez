@@ -3,16 +3,10 @@ const mime = @import("../mime.zig");
 usingnamespace @import("headers.zig");
 usingnamespace @import("common.zig");
 
-pub const BodyWriter = std.io.Writer(*std.ArrayList(u8), error{OutOfMemory}, writeAppend);
-fn writeAppend(self: *std.ArrayList(u8), data: []const u8) !usize {
-    try self.appendSlice(data);
-    return data.len;
-}
-
 pub const Response = struct {
     status_code: StatusCode,
     headers: Headers,
-    body: BodyWriter,
+    body: std.ArrayList(u8).Writer,
 
     /// arena allocator that frees everything when response has been sent
     allocator: *std.mem.Allocator,
