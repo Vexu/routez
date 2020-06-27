@@ -32,7 +32,7 @@ pub const Server = struct {
         buf: []u8,
         index: usize = 0,
         count: usize = 0,
-        out_stream: std.io.BufferedOutStream(4096, File.OutStream),
+        writer: std.io.BufferedWriter(4096, File.Writer),
         server: *Server,
         file: File,
 
@@ -53,7 +53,7 @@ pub const Server = struct {
             ctx.* = .{
                 .stack = stack,
                 .buf = buf,
-                .out_stream = std.io.bufferedOutStream(file.outStream()),
+                .writer = std.io.bufferedWriter(file.writer()),
                 .server = server,
                 .file = file,
                 .frame = undefined,
@@ -187,13 +187,13 @@ pub const Server = struct {
                 };
             } else |e| {
                 try defaultErrorHandler(e, &req, &res);
-                try writeResponse(ctx.server, ctx.out_stream.outStream(), &req, &res);
-                try ctx.out_stream.flush();
+                try writeResponse(ctx.server, ctx.writer.writer(), &req, &res);
+                try ctx.writer.flush();
                 return .none;
             }
 
-            try writeResponse(ctx.server, ctx.out_stream.outStream(), &req, &res);
-            try ctx.out_stream.flush();
+            try writeResponse(ctx.server, ctx.writer.writer(), &req, &res);
+            try ctx.writer.flush();
 
             // reset for next request
             arena.deinit();
@@ -205,24 +205,24 @@ pub const Server = struct {
         return .none;
     }
 
-    fn writeResponse(server: *Server, stream: var, req: Request, res: Response) !void {
+    fn writeResponse(server: *Server, writer: var, req: Request, res: Response) !void {
         const body = res.body.context.items;
         const is_head = mem.eql(u8, req.method, Method.Head);
 
-        try stream.print("{} {} {}\r\n", .{ req.version.toString(), @enumToInt(res.status_code), res.status_code.toString() });
+        try writer.print("{} {} {}\r\n", .{ req.version.toString(), @enumToInt(res.status_code), res.status_code.toString() });
 
         for (res.headers.list.items) |header| {
-            try stream.print("{}: {}\r\n", .{ header.name, header.value });
+            try writer.print("{}: {}\r\n", .{ header.name, header.value });
         }
-        try stream.writeAll("connection: close\r\n");
+        try writer.writeAll("connection: close\r\n");
         if (is_head) {
-            try stream.writeAll("content-length: 0\r\n\r\n");
+            try writer.writeAll("content-length: 0\r\n\r\n");
         } else {
-            try stream.print("content-length: {}\r\n\r\n", .{body.len});
+            try writer.print("content-length: {}\r\n\r\n", .{body.len});
         }
 
         if (!is_head) {
-            try stream.writeAll(body);
+            try writer.writeAll(body);
         }
     }
 
