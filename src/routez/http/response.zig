@@ -41,7 +41,7 @@ pub const Response = struct {
         var mimetype: []const u8 = mime.default;
 
         if (std.mem.lastIndexOfScalar(u8, path, '.')) |i| {
-            if (mime.fromExtension(path[i + 1 ..])) |m| mimetype = m;
+            if (mime.map.get(path[i + 1 ..])) |m| mimetype = m;
         }
         try res.setType(mimetype);
     }
