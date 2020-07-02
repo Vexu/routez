@@ -26,7 +26,7 @@ pub fn parse(req: *Request, ctx: *Context) !void {
         req.path = try Uri.resolvePath(req.headers.list.allocator, uri.path);
         req.query = uri.query;
     } else {
-        req.path = try mem.dupe(req.headers.list.allocator, u8, ctx.buf[cur .. ctx.index - 1]);
+        req.path = try req.headers.list.allocator.dupe(u8, ctx.buf[cur .. ctx.index - 1]);
     }
     cur = ctx.index;
 
@@ -112,7 +112,7 @@ fn expect(ctx: *Context, c: u8) !void {
 const alloc = std.heap.page_allocator;
 
 test "parse headers" {
-    var b = try mem.dupe(alloc, u8, "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:67.0) Gecko/20100101 Firefox/67.0\r\n" ++
+    var b = try alloc.dupe(u8, "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:67.0) Gecko/20100101 Firefox/67.0\r\n" ++
         "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n" ++
         "Accept-Language: en-US,en;q=0.5\r\n" ++
         "Accept-Encoding: gzip, deflate\r\n" ++
@@ -152,7 +152,7 @@ test "parse headers" {
 }
 
 test "HTTP/0.9" {
-    var b = try mem.dupe(alloc, u8, "GET / HTTP/0.9\r\n");
+    var b = try alloc.dupe(u8, "GET / HTTP/0.9\r\n");
     defer alloc.free(b);
     var req: Request = undefined;
     req.headers = Headers.init(alloc);
@@ -174,7 +174,7 @@ test "HTTP/0.9" {
 }
 
 test "HTTP/1.1" {
-    var b = try mem.dupe(alloc, u8, "POST /about HTTP/1.1\r\n" ++
+    var b = try alloc.dupe(u8, "POST /about HTTP/1.1\r\n" ++
         "expires: Mon, 08 Jul 2019 11:49:03 GMT\r\n" ++
         "last-modified: Fri, 09 Nov 2018 06:15:00 GMT\r\n" ++
         "X-Test: test\r\n" ++
@@ -206,7 +206,7 @@ test "HTTP/1.1" {
 }
 
 test "HTTP/3.0" {
-    var b = try mem.dupe(alloc, u8, "POST /about HTTP/3.0\r\n\r\n");
+    var b = try alloc.dupe(u8, "POST /about HTTP/3.0\r\n\r\n");
     defer alloc.free(b);
     var req: Request = undefined;
     req.headers = Headers.init(alloc);
