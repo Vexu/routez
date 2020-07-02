@@ -181,7 +181,7 @@ pub const Server = struct {
             try ctx.read();
 
             if (parser.parse(&req, ctx)) {
-                var frame = @asyncCall(ctx.stack, {}, ctx.server.handler, &req, &res, req.path);
+                var frame = @asyncCall(ctx.stack, {}, ctx.server.handler, .{ &req, &res, req.path });
                 await frame catch |e| {
                     try defaultErrorHandler(e, &req, &res);
                 };
