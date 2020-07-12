@@ -3,52 +3,52 @@ const expect = std.testing.expect;
 usingnamespace @import("http.zig");
 usingnamespace @import("router.zig");
 
-pub fn all(path: []const u8, handler: var) Route {
+pub fn all(path: []const u8, handler: anytype) Route {
     return createRoute(null, path, handler);
 }
 
-pub fn get(path: []const u8, handler: var) Route {
+pub fn get(path: []const u8, handler: anytype) Route {
     return createRoute(Method.Get, path, handler);
 }
 
-pub fn head(path: []const u8, handler: var) Route {
+pub fn head(path: []const u8, handler: anytype) Route {
     return createRoute(Method.Head, path, handler);
 }
 
-pub fn post(path: []const u8, handler: var) Route {
+pub fn post(path: []const u8, handler: anytype) Route {
     return createRoute(Method.Post, path, handler);
 }
 
-pub fn put(path: []const u8, handler: var) Route {
+pub fn put(path: []const u8, handler: anytype) Route {
     return createRoute(Method.Put, path, handler);
 }
 
-pub fn delete(path: []const u8, handler: var) Route {
+pub fn delete(path: []const u8, handler: anytype) Route {
     return createRoute(Method.Delete, path, handler);
 }
 
-pub fn connect(path: []const u8, handler: var) Route {
+pub fn connect(path: []const u8, handler: anytype) Route {
     return createRoute(Method.Connect, path, handler);
 }
 
-pub fn options(path: []const u8, handler: var) Route {
+pub fn options(path: []const u8, handler: anytype) Route {
     return createRoute(Method.Options, path, handler);
 }
 
-pub fn trace(path: []const u8, handler: var) Route {
+pub fn trace(path: []const u8, handler: anytype) Route {
     return createRoute(Method.Trace, path, handler);
 }
 
-pub fn patch(path: []const u8, handler: var) Route {
+pub fn patch(path: []const u8, handler: anytype) Route {
     return createRoute(Method.Patch, path, handler);
 }
 
-pub fn custom(method: []const u8, path: []const u8, handler: var) Route {
+pub fn custom(method: []const u8, path: []const u8, handler: anytype) Route {
     return createRoute(method, path, handler);
 }
 
 /// add route with given method
-fn createRoute(method: ?[]const u8, path: []const u8, handler: var) Route {
+fn createRoute(method: ?[]const u8, path: []const u8, handler: anytype) Route {
     const t = @typeInfo(@TypeOf(handler));
     if (t != .Fn) {
         @compileError("handler must be a function");
@@ -88,7 +88,7 @@ fn createRoute(method: ?[]const u8, path: []const u8, handler: var) Route {
     };
 }
 
-pub fn subRoute(route: []const u8, handlers: var) Route {
+pub fn subRoute(route: []const u8, handlers: anytype) Route {
     const h = Router(handlers);
     const handler = struct {
         fn handle(req: Request, res: Response, args: *const struct {

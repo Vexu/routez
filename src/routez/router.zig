@@ -13,7 +13,7 @@ pub const ErrorHandler = struct {
     err: anyerror,
 };
 
-pub fn Router(comptime handlers: var) HandlerFn {
+pub fn Router(comptime handlers: anytype) HandlerFn {
     comptime var routes: []const Route = &[_]Route{};
     comptime var err_handlers: []const ErrorHandler = &[_]ErrorHandler{};
     inline for (handlers) |handler| {
@@ -79,7 +79,7 @@ pub fn Router(comptime handlers: var) HandlerFn {
 pub const Route = struct {
     path: []const u8,
     method: ?[]const u8,
-    handler: var,
+    handler: anytype,
 };
 
 /// returns true if request matched route
