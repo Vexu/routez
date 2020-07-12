@@ -53,7 +53,7 @@ pub const Response = struct {
         try res.body.writeAll(bytes);
     }
 
-    pub fn print(res: *Response, comptime format: []const u8, args: var) WriteError!void {
+    pub fn print(res: *Response, comptime format: []const u8, args: anytype) WriteError!void {
         try res.setType(mime.html);
         try res.body.print(format, args);
     }

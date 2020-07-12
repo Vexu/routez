@@ -84,7 +84,7 @@ pub const Server = struct {
         none,
     };
 
-    pub fn init(allocator: *Allocator, config: Config, handlers: var) Server {
+    pub fn init(allocator: *Allocator, config: Config, handlers: anytype) Server {
         return .{
             .server = StreamServer.init(.{}),
             .handler = Router(handlers),
@@ -205,7 +205,7 @@ pub const Server = struct {
         return .none;
     }
 
-    fn writeResponse(server: *Server, writer: var, req: Request, res: Response) !void {
+    fn writeResponse(server: *Server, writer: anytype, req: Request, res: Response) !void {
         const body = res.body.context.items;
         const is_head = mem.eql(u8, req.method, Method.Head);
 
