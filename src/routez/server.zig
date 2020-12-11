@@ -119,9 +119,14 @@ pub const Server = struct {
                 error.SystemResources,
                 error.ProtocolFailure,
                 error.Unexpected,
-                error.PermissionDenied,
+                error.ConnectionResetByPeer,
+                error.NetworkSubsystemFailed,
                 => continue,
                 error.BlockedByFirewall => |e| return e,
+                error.FileDescriptorNotASocket,
+                error.SocketNotListening,
+                error.OperationNotSupported,
+                => return error.ListenError,
             };
             var context = Context.init(server, conn.file) catch {
                 conn.file.close();
