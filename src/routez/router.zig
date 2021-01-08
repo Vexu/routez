@@ -128,6 +128,10 @@ pub fn match(
                     state = .Path;
                     index += 1;
                 },
+                '*' => {
+                    state = .Path;
+                    break;
+                },
                 else => @compileError("route must begin with a '/'"),
             },
             .Path => switch (c) {
@@ -302,7 +306,7 @@ pub fn match(
         }
     };
     const r = pathbuf[begin..index];
-    if (!mem.eql(u8, r, path[path_index..])) {
+    if (route.path[0] != '*' and !mem.eql(u8, r, path[path_index..])) {
         return false;
     }
     if (route.method) |m| {
