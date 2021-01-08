@@ -121,6 +121,7 @@ pub const Server = struct {
                 error.Unexpected,
                 error.ConnectionResetByPeer,
                 error.NetworkSubsystemFailed,
+                error.PermissionDenied,
                 => continue,
                 error.BlockedByFirewall => |e| return e,
                 error.FileDescriptorNotASocket,
