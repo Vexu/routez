@@ -214,10 +214,10 @@ pub const Server = struct {
         const body = res.body.context.items;
         const is_head = mem.eql(u8, req.method, Method.Head);
 
-        try writer.print("{} {} {}\r\n", .{ req.version.toString(), @enumToInt(res.status_code), res.status_code.toString() });
+        try writer.print("{s} {} {s}\r\n", .{ req.version.toString(), @enumToInt(res.status_code), res.status_code.toString() });
 
         for (res.headers.list.items) |header| {
-            try writer.print("{}: {}\r\n", .{ header.name, header.value });
+            try writer.print("{s}: {s}\r\n", .{ header.name, header.value });
         }
         try writer.writeAll("connection: close\r\n");
         if (is_head) {
@@ -243,7 +243,7 @@ pub const Server = struct {
                     \\</head>
                     \\<body>
                     \\    <h1>Not Found</h1>
-                    \\    <p>Requested URL {} was not found.</p>
+                    \\    <p>Requested URL {s} was not found.</p>
                     \\</body>
                     \\</html>
                 , .{req.path});
@@ -259,7 +259,7 @@ pub const Server = struct {
                         \\</head>
                         \\<body>
                         \\    <h1>Internal Server Error</h1>
-                        \\    <p>Debug info - Error: {}</p>
+                        \\    <p>Debug info - Error: {s}</p>
                         \\</body>
                         \\</html>
                     , .{@errorName(err)});
