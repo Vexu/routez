@@ -21,13 +21,9 @@ pub fn parse(req: *Request, ctx: *Context) !void {
     if (!seek(ctx, ' ')) {
         return error.NoPath;
     }
-    if (req.path.len > 1) {
-        const uri = try Uri.parse(ctx.buf[cur .. ctx.index - 1], true);
-        req.path = try Uri.resolvePath(req.headers.list.allocator, uri.path);
-        req.query = uri.query;
-    } else {
-        req.path = try req.headers.list.allocator.dupe(u8, ctx.buf[cur .. ctx.index - 1]);
-    }
+    const uri = try Uri.parse(ctx.buf[cur .. ctx.index - 1], true);
+    req.path = try Uri.resolvePath(req.headers.list.allocator, uri.path);
+    req.query = uri.query;
     cur = ctx.index;
 
     // version
