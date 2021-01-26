@@ -350,7 +350,7 @@ fn verifyField(comptime field: type, number: *bool) void {
 }
 
 fn getNum(comptime T: type, path: []const u8, radix: u8, len: *usize) T {
-    const signed = @typeInfo(T).Int.is_signed;
+    const signed = @typeInfo(T).Int.signedness == .signed;
     var sign = if (signed) false;
     var res: T = 0;
     for (path) |c, i| {

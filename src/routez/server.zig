@@ -32,15 +32,15 @@ pub const Server = struct {
         buf: []u8,
         index: usize = 0,
         count: usize = 0,
-        writer: std.io.BufferedWriter(4096, File.Writer),
+        writer: std.io.BufferedWriter(4096, std.net.Stream.Writer),
         server: *Server,
-        file: File,
+        stream: std.net.Stream,
 
         frame: @Frame(handleRequest),
 
         node: DiscardStack.Node,
 
-        pub fn init(server: *Server, file: File) !*Context {
+        pub fn init(server: *Server, stream: std.net.Stream) !*Context {
             var ctx = try server.allocator.create(Context);
             errdefer server.allocator.destroy(ctx);
 
@@ -53,9 +53,9 @@ pub const Server = struct {
             ctx.* = .{
                 .stack = stack,
                 .buf = buf,
-                .writer = std.io.bufferedWriter(file.writer()),
+                .writer = std.io.bufferedWriter(stream.writer()),
                 .server = server,
-                .file = file,
+                .stream = stream,
                 .frame = undefined,
                 .node = .{
                     .next = null,
@@ -67,14 +67,14 @@ pub const Server = struct {
         }
 
         pub fn deinit(context: *Context) void {
-            context.file.close();
+            context.stream.close();
             context.server.allocator.free(context.stack);
             context.server.allocator.free(context.buf);
         }
 
         pub fn read(context: *Context) !void {
             context.index = 0;
-            context.count = try context.file.read(context.buf);
+            context.count = try context.stream.read(context.buf);
         }
     };
 
@@ -128,8 +128,8 @@ pub const Server = struct {
                 error.OperationNotSupported,
                 => return error.ListenError,
             };
-            var context = Context.init(server, conn.file) catch {
-                conn.file.close();
+            var context = Context.init(server, conn.stream) catch {
+                conn.stream.close();
                 continue;
             };
 
