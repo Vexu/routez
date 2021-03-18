@@ -37,10 +37,10 @@ fn aboutHandler2(req: Request, res: Response) !void {
 fn postHandler(req: Request, res: Response, args: *const struct {
     post_num: []const u8,
 }) !void {
-    try res.print("Hello from post, post_num is {}\n", .{args.post_num});
+    try res.print("Hello from post, post_num is {s}\n", .{args.post_num});
 }
 
 var counter = std.atomic.Int(usize).init(0);
 fn counterHandler(req: Request, res: Response) !void {
-    try res.print("Page loaded {} times\n", .{counter.fetchAdd(1)});
+    try res.print("Page loaded {d} times\n", .{counter.fetchAdd(1)});
 }
