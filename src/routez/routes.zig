@@ -139,11 +139,31 @@ test "index" {
     };
     var res: response = undefined;
     try nosuspend handler(&req, &res, req.path);
-    expect(res.status_code == .Ok);
+    expect(res.status_code.? == .Ok);
 }
 
 fn indexHandler(req: Request, res: Response) void {
     res.status_code = .Ok;
+}
+
+test "custom status code" {
+    const handler = comptime Router(.{get("/", customStatusCode)});
+
+    var req = request{
+        .method = Method.Get,
+        .headers = undefined,
+        .path = "/",
+        .query = undefined,
+        .body = undefined,
+        .version = .Http11,
+    };
+    var res: response = undefined;
+    try nosuspend handler(&req, &res, req.path);
+    expect(res.status_code.? == .BadRequest);
+}
+
+fn customStatusCode(req: Request, res: Response) void {
+    res.status_code = .BadRequest;
 }
 
 test "args" {
@@ -204,7 +224,7 @@ test "subRoute" {
     var res: response = undefined;
 
     try nosuspend handler(&req, &res, req.path);
-    expect(res.status_code == .Ok);
+    expect(res.status_code.? == .Ok);
 }
 
 test "static files" {
@@ -252,5 +272,5 @@ test "optional char" {
     };
     var res: response = undefined;
     try nosuspend handler(&req, &res, req.path);
-    expect(res.status_code == .Ok);
+    expect(res.status_code.? == .Ok);
 }

@@ -4,7 +4,7 @@ usingnamespace @import("headers.zig");
 usingnamespace @import("common.zig");
 
 pub const Response = struct {
-    status_code: StatusCode,
+    status_code: ?StatusCode,
     headers: Headers,
     body: std.ArrayList(u8).Writer,
 

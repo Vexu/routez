@@ -45,7 +45,8 @@ pub fn Router(comptime handlers: anytype) HandlerFn {
                 // try matching path to route
                 if (err == null) {
                     if (match(route, err, req, res, path)) {
-                        res.status_code = .Ok;
+                        if (res.status_code == null)
+                            res.status_code = .Ok;
                         return;
                     }
                 } else {
@@ -56,7 +57,8 @@ pub fn Router(comptime handlers: anytype) HandlerFn {
                             return handleError(e, req, res);
                         }
                     }) {
-                        res.status_code = .Ok;
+                        if (res.status_code == null)
+                            res.status_code = .Ok;
                         return;
                     }
                 }

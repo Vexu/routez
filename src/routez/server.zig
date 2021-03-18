@@ -178,7 +178,7 @@ pub const Server = struct {
                 .version = .Http11,
             };
             var res = response.Response{
-                .status_code = undefined,
+                .status_code = null,
                 .headers = Headers.init(alloc),
                 .body = buf.writer(),
                 .allocator = alloc,
@@ -214,7 +214,7 @@ pub const Server = struct {
         const body = res.body.context.items;
         const is_head = mem.eql(u8, req.method, Method.Head);
 
-        try writer.print("{s} {} {s}\r\n", .{ req.version.toString(), @enumToInt(res.status_code), res.status_code.toString() });
+        try writer.print("{s} {} {s}\r\n", .{ req.version.toString(), @enumToInt(res.status_code.?), res.status_code.?.toString() });
 
         for (res.headers.list.items) |header| {
             try writer.print("{s}: {s}\r\n", .{ header.name, header.value });
