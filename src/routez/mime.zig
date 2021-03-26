@@ -5,6 +5,7 @@ const hashString = std.hash_map.hashString;
 /// Maps extensions to their mimetypes
 pub const map = std.ComptimeStringMap([]const u8, .{
     .{ "js", js },
+    .{ "json", json },
     .{ "css", css },
     .{ "html", html },
     .{ "png", png },
@@ -23,6 +24,7 @@ pub const map = std.ComptimeStringMap([]const u8, .{
 pub const js = "application/javascript;charset=UTF-8";
 pub const css = "text/css;charset=UTF-8";
 pub const html = "text/html;charset=UTF-8";
+pub const json = "application/json;";
 pub const png = "image/png";
 pub const jpeg = "image/jpeg";
 pub const gif = "image/gif";
