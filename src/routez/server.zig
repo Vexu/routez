@@ -184,6 +184,9 @@ pub const Server = struct {
                 .allocator = alloc,
             };
             try ctx.read();
+            if (ctx.count == 0) {
+                return .none;
+            }
 
             if (parser.parse(&req, ctx)) {
                 var frame = @asyncCall(ctx.stack, {}, ctx.server.handler, .{ &req, &res, req.path });
@@ -204,8 +207,6 @@ pub const Server = struct {
             arena.deinit();
             arena = ArenaAllocator.init(ctx.server.allocator);
             buf.resize(0) catch unreachable;
-            // TODO keepalive here
-            return .none;
         }
         return .none;
     }
@@ -219,7 +220,18 @@ pub const Server = struct {
         for (res.headers.list.items) |header| {
             try writer.print("{s}: {s}\r\n", .{ header.name, header.value });
         }
-        try writer.writeAll("connection: close\r\n");
+
+        const keep_alive = switch (req.version) {
+            Version.Http09 => false,
+            Version.Http10 => req.headers.hasTokenIgnoreCase("connection", "keep-alive"),
+            else => !req.headers.hasTokenIgnoreCase("connection", "close"),
+        };
+        if (keep_alive) {
+            try writer.writeAll("connection: keep-alive\r\n");
+        } else {
+            try writer.writeAll("connection: close\r\n");
+        }
+
         if (is_head) {
             try writer.writeAll("content-length: 0\r\n\r\n");
         } else {
