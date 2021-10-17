@@ -1,4 +1,5 @@
 const std = @import("std");
+const ascii = std.ascii;
 const mem = std.mem;
 const Allocator = mem.Allocator;
 const ArrayList = std.ArrayList;
@@ -88,6 +89,15 @@ pub const Headers = struct {
     pub fn has(h: *Headers, name: []const u8) bool {
         for (headers.list.items) |*h| {
             if (mem.eql(u8, h.name, name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    pub fn hasTokenIgnoreCase(headers: *const Headers, name: []const u8, token: []const u8) bool {
+        for (headers.list.items) |*h| {
+            if (ascii.eqlIgnoreCase(h.name, name) and ascii.eqlIgnoreCase(h.value, token)) {
                 return true;
             }
         }
