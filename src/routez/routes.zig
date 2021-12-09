@@ -1,7 +1,14 @@
 const std = @import("std");
 const expect = std.testing.expect;
-usingnamespace @import("http.zig");
-usingnamespace @import("router.zig");
+const Route = @import("router.zig").Route;
+const router = @import("router.zig");
+const http = @import("http.zig");
+const Router = router.Router;
+const HandlerFn = router.HandlerFn;
+const Request = http.Request;
+const Response = http.Response;
+const Headers = http.Headers;
+const Method = http.Method;
 
 pub fn all(path: []const u8, handler: anytype) Route {
     return createRoute(null, path, handler);
@@ -106,7 +113,7 @@ pub fn subRoute(route: []const u8, handlers: anytype) Route {
 // todo uri decode path
 pub fn static(local_path: []const u8, remote_path: ?[]const u8) Route {
     const handler = struct {
-        fn staticHandler(req: Request, res: Response, args: *const struct {
+        fn staticHandler(_: Request, res: Response, args: *const struct {
             path: []const u8,
         }) !void {
             const allocator = res.allocator;
@@ -139,10 +146,10 @@ test "index" {
     };
     var res: response = undefined;
     try nosuspend handler(&req, &res, req.path);
-    expect(res.status_code.? == .Ok);
+    try expect(res.status_code.? == .Ok);
 }
 
-fn indexHandler(req: Request, res: Response) void {
+fn indexHandler(_: Request, res: Response) void {
     res.status_code = .Ok;
 }
 
@@ -159,10 +166,10 @@ test "custom status code" {
     };
     var res: response = undefined;
     try nosuspend handler(&req, &res, req.path);
-    expect(res.status_code.? == .BadRequest);
+    try expect(res.status_code.? == .BadRequest);
 }
 
-fn customStatusCode(req: Request, res: Response) void {
+fn customStatusCode(_: Request, res: Response) void {
     res.status_code = .BadRequest;
 }
 
@@ -182,10 +189,10 @@ test "args" {
     try nosuspend handler(&req, &res, req.path);
 }
 
-fn argHandler(req: Request, res: Response, args: *const struct {
+fn argHandler(_: Request, _: Response, args: *const struct {
     num: u32,
-}) void {
-    expect(args.num == 14);
+}) !void {
+    try expect(args.num == 14);
 }
 
 test "delim string" {
@@ -204,10 +211,10 @@ test "delim string" {
     try nosuspend handler(&req, &res, req.path);
 }
 
-fn delimHandler(req: Request, res: Response, args: *const struct {
+fn delimHandler(_: Request, _: Response, args: *const struct {
     str: []const u8,
-}) void {
-    expect(std.mem.eql(u8, args.str, "all/of/this.html"));
+}) !void {
+    try expect(std.mem.eql(u8, args.str, "all/of/this.html"));
 }
 
 test "subRoute" {
@@ -224,7 +231,7 @@ test "subRoute" {
     var res: response = undefined;
 
     try nosuspend handler(&req, &res, req.path);
-    expect(res.status_code.? == .Ok);
+    try expect(res.status_code.? == .Ok);
 }
 
 test "static files" {
@@ -255,8 +262,8 @@ test "static files" {
         error.FileNotFound => return,
         else => return e,
     };
-    expect(std.mem.eql(u8, (try res.headers.get(alloc, "content-type")).?[0].value, "text/plain;charset=UTF-8"));
-    expect(std.mem.eql(u8, res.body.context.items, "Some text\n"));
+    try expect(std.mem.eql(u8, (try res.headers.get(alloc, "content-type")).?[0].value, "text/plain;charset=UTF-8"));
+    try expect(std.mem.eql(u8, res.body.context.items, "Some text\n"));
 }
 
 test "optional char" {
@@ -272,5 +279,5 @@ test "optional char" {
     };
     var res: response = undefined;
     try nosuspend handler(&req, &res, req.path);
-    expect(res.status_code.? == .Ok);
+    try expect(res.status_code.? == .Ok);
 }

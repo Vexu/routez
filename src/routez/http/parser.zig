@@ -1,10 +1,12 @@
 const std = @import("std");
 const mem = std.mem;
-usingnamespace @import("headers.zig");
-usingnamespace @import("request.zig");
-usingnamespace @import("common.zig");
-usingnamespace @import("zuri");
+const zuri = @import("zuri");
+const Uri = zuri.Uri;
+const Headers = @import("headers.zig").Headers;
+const Request = @import("request.zig").Request;
+const Version = @import("common.zig").Version;
 const Context = @import("../server.zig").Server.Context;
+const Method = @import("../http.zig").Method;
 const t = std.testing;
 
 pub fn parse(req: *Request, ctx: *Context) !void {
@@ -131,20 +133,20 @@ test "parse headers" {
     try parseHeaders(&h, &ctx);
 
     var slice = h.list.items;
-    t.expect(mem.eql(u8, slice[0].name, "user-agent"));
-    t.expect(mem.eql(u8, slice[0].value, "Mozilla/5.0 (X11; Linux x86_64; rv:67.0) Gecko/20100101 Firefox/67.0"));
-    t.expect(mem.eql(u8, slice[1].name, "accept"));
-    t.expect(mem.eql(u8, slice[1].value, "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"));
-    t.expect(mem.eql(u8, slice[2].name, "accept-language"));
-    t.expect(mem.eql(u8, slice[2].value, "en-US,en;q=0.5"));
-    t.expect(mem.eql(u8, slice[3].name, "accept-encoding"));
-    t.expect(mem.eql(u8, slice[3].value, "gzip, deflate"));
-    t.expect(mem.eql(u8, slice[4].name, "dnt"));
-    t.expect(mem.eql(u8, slice[4].value, "1"));
-    t.expect(mem.eql(u8, slice[5].name, "connection"));
-    t.expect(mem.eql(u8, slice[5].value, "keep-alive"));
-    t.expect(mem.eql(u8, slice[6].name, "upgrade-insecure-requests"));
-    t.expect(mem.eql(u8, slice[6].value, "1"));
+    try t.expect(mem.eql(u8, slice[0].name, "user-agent"));
+    try t.expect(mem.eql(u8, slice[0].value, "Mozilla/5.0 (X11; Linux x86_64; rv:67.0) Gecko/20100101 Firefox/67.0"));
+    try t.expect(mem.eql(u8, slice[1].name, "accept"));
+    try t.expect(mem.eql(u8, slice[1].value, "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"));
+    try t.expect(mem.eql(u8, slice[2].name, "accept-language"));
+    try t.expect(mem.eql(u8, slice[2].value, "en-US,en;q=0.5"));
+    try t.expect(mem.eql(u8, slice[3].name, "accept-encoding"));
+    try t.expect(mem.eql(u8, slice[3].value, "gzip, deflate"));
+    try t.expect(mem.eql(u8, slice[4].name, "dnt"));
+    try t.expect(mem.eql(u8, slice[4].value, "1"));
+    try t.expect(mem.eql(u8, slice[5].name, "connection"));
+    try t.expect(mem.eql(u8, slice[5].value, "keep-alive"));
+    try t.expect(mem.eql(u8, slice[6].name, "upgrade-insecure-requests"));
+    try t.expect(mem.eql(u8, slice[6].value, "1"));
 }
 
 test "HTTP/0.9" {
@@ -164,9 +166,9 @@ test "HTTP/0.9" {
         .node = undefined,
     };
     try parse(&req, &ctx);
-    t.expect(mem.eql(u8, req.method, Method.Get));
-    t.expect(mem.eql(u8, req.path, "/"));
-    t.expect(req.version == .Http09);
+    try t.expect(mem.eql(u8, req.method, Method.Get));
+    try t.expect(mem.eql(u8, req.path, "/"));
+    try t.expect(req.version == .Http09);
 }
 
 test "HTTP/1.1" {
@@ -191,14 +193,15 @@ test "HTTP/1.1" {
         .node = undefined,
     };
     try parse(&req, &ctx);
-    t.expect(mem.eql(u8, req.method, Method.Post));
-    t.expect(mem.eql(u8, req.path, "/about"));
-    t.expect(req.version == .Http11);
-    t.expect(mem.eql(u8, req.body, "a body\n"));
-    t.expect(mem.eql(u8, (try req.headers.get(alloc, "expires")).?[0].value, "Mon, 08 Jul 2019 11:49:03 GMT"));
-    t.expect(mem.eql(u8, (try req.headers.get(alloc, "last-modified")).?[0].value, "Fri, 09 Nov 2018 06:15:00 GMT"));
+    try t.expect(mem.eql(u8, req.method, Method.Post));
+    try t.expect(mem.eql(u8, req.path, "/about"));
+    try t.expect(req.version == .Http11);
+    try t.expect(mem.eql(u8, req.body, "a body\n"));
+    try t.expect(mem.eql(u8, (try req.headers.get(alloc, "expires")).?[0].value, "Mon, 08 Jul 2019 11:49:03 GMT"));
+    try t.expect(mem.eql(u8, (try req.headers.get(alloc, "last-modified")).?[0].value, "Fri, 09 Nov 2018 06:15:00 GMT"));
     const val = try req.headers.get(alloc, "x-test");
-    t.expect(mem.eql(u8, (try req.headers.get(alloc, "x-test")).?[0].value, "test obs-fold"));
+    _ = val;
+    try t.expect(mem.eql(u8, (try req.headers.get(alloc, "x-test")).?[0].value, "test obs-fold"));
 }
 
 test "HTTP/3.0" {
@@ -217,5 +220,5 @@ test "HTTP/3.0" {
         .frame = undefined,
         .node = undefined,
     };
-    t.expectError(error.UnsupportedVersion, parse(&req, &ctx));
+    try t.expectError(error.UnsupportedVersion, parse(&req, &ctx));
 }

@@ -1,5 +1,5 @@
-usingnamespace @import("common.zig");
-usingnamespace @import("headers.zig");
+const Version = @import("common.zig").Version;
+const Headers = @import("headers.zig").Headers;
 
 pub const Request = struct {
     method: []const u8,

@@ -19,7 +19,7 @@ pub const Headers = struct {
         name: []const u8,
         value: []const u8,
 
-        fn from(allocator: *Allocator, name: []const u8, value: []const u8) Error!Header {
+        fn from(allocator: Allocator, name: []const u8, value: []const u8) Error!Header {
             var copy_name = try allocator.alloc(u8, name.len);
             var copy_value = try allocator.alloc(u8, value.len);
             errdefer allocator.free(copy_name);
@@ -51,7 +51,7 @@ pub const Headers = struct {
         }
     };
 
-    pub fn init(allocator: *Allocator) Headers {
+    pub fn init(allocator: Allocator) Headers {
         return Headers{
             .list = HeaderList.init(allocator),
         };
@@ -66,7 +66,7 @@ pub const Headers = struct {
         headers.list.deinit();
     }
 
-    pub fn get(headers: *const Headers, allocator: *Allocator, name: []const u8) Error!?[]const *Header {
+    pub fn get(headers: *const Headers, allocator: Allocator, name: []const u8) Error!?[]const *Header {
         var list = ArrayList(*Header).init(allocator);
         errdefer list.deinit();
         for (headers.list.items) |*h| {
@@ -86,7 +86,7 @@ pub const Headers = struct {
     //     // var old = get()
     // }
 
-    pub fn has(h: *Headers, name: []const u8) bool {
+    pub fn has(headers: *Headers, name: []const u8) bool {
         for (headers.list.items) |*h| {
             if (mem.eql(u8, h.name, name)) {
                 return true;

@@ -1,7 +1,7 @@
 const std = @import("std");
 const mime = @import("../mime.zig");
-usingnamespace @import("headers.zig");
-usingnamespace @import("common.zig");
+const Headers = @import("headers.zig").Headers;
+const StatusCode = @import("common.zig").StatusCode;
 
 pub const Response = struct {
     status_code: ?StatusCode,
@@ -9,7 +9,7 @@ pub const Response = struct {
     body: std.ArrayList(u8).Writer,
 
     /// arena allocator that frees everything when response has been sent
-    allocator: *std.mem.Allocator,
+    allocator: std.mem.Allocator,
 
     pub fn setType(res: *Response, mimetype: []const u8) Headers.Error!void {
         try res.headers.put("content-type", mimetype);
