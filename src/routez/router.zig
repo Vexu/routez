@@ -4,7 +4,9 @@ const mem = std.mem;
 const math = std.math;
 const assert = std.debug.assert;
 const meta = std.meta;
-usingnamespace @import("http.zig");
+const http = @import("http.zig");
+const Request = http.Request;
+const Response = http.Response;
 
 pub const HandlerFn = fn handle(Request, Response, []const u8) callconv(.Async) anyerror!void;
 
@@ -212,6 +214,7 @@ pub fn match(
                             Done,
                             Fmt,
                         };
+                        _ = Fstate;
                         var fstate = .Name;
                         var fmt = route.path[fmt_begin..i];
                         if (fmt.len == 0) {

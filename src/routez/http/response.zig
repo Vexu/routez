@@ -1,7 +1,7 @@
 const std = @import("std");
 const mime = @import("../mime.zig");
-usingnamespace @import("headers.zig");
-usingnamespace @import("common.zig");
+const Headers = @import("headers.zig").Headers;
+const StatusCode = @import("common.zig").StatusCode;
 
 pub const Response = struct {
     status_code: ?StatusCode,
