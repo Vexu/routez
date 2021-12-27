@@ -14,10 +14,10 @@ pub fn build(b: *Builder) void {
     basic.setBuildMode(mode);
     basic.addPackage(.{
         .name = "routez",
-        .path = "src/routez.zig",
+        .path = .{ .path = "src/routez.zig" },
         .dependencies = &[_]std.build.Pkg{.{
             .name = "zuri",
-            .path = "zuri/src/zuri.zig",
+            .path = .{ .path = "zuri/src/zuri.zig" },
         }},
     });
     basic.setOutputDir("zig-cache");
