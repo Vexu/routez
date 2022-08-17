@@ -91,7 +91,8 @@ fn createRoute(method: ?[]const u8, path: []const u8, handler: anytype) Route {
     return Route{
         .path = path,
         .method = method,
-        .handler = handler,
+        .handler = @ptrCast(fn () void, handler),
+        .handler_ty = @TypeOf(handler),
     };
 }
 
